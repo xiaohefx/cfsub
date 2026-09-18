@@ -716,7 +716,7 @@ function renderOverview(){
   const sys = s.system||{};
   $('#sysInfo').innerHTML =
     '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;font-size:13px">'+
-    row('版本', sys.version||'-') + row('存储后端', sys.storage==='d1' ? '✅ D1 数据库' : (sys.storage==='kv' ? '✅ KV 命名空间' : '❌ 未绑定')) +
+    row('版本', sys.version||'-') + row('KV 绑定', sys.hasKV ? '✅ 正常' : '❌ 缺失') +
     row('用户总数', (CFG.users||[]).length + ' 个') +
     row('Kill Switch', CFG.isPaused ? '🛑 已开启' : '关闭') +
     row('协议', (CFG.mode||'vless')) + row('UUID', (CFG.uuid||'-').slice(0,8)+'…') +

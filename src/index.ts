@@ -9,19 +9,15 @@ import { DASHBOARD_HTML } from './panel/dashboard.ts';
 import { SUBSCRIPTION_HTML } from './panel/subscription.ts';
 import { html, text, json, deriveUUID, safeFetch, formatBytes, gbToBytes } from './utils.ts';
 
-const STORE_MISSING_HTML = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
-<title>缺少存储绑定</title><style>body{font-family:system-ui;background:#0f172a;color:#e2e8f0;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
+const KV_MISSING_HTML = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<title>缺少 KV 绑定</title><style>body{font-family:system-ui;background:#0f172a;color:#e2e8f0;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
 .box{max-width:560px;padding:32px;background:#1e293b;border-radius:16px;line-height:1.8}
 code{background:#0f172a;padding:2px 6px;border-radius:4px}</style></head><body><div class="box">
-<h2>⚠️ 未检测到存储绑定</h2>
-<p>本面板需要在 Cloudflare 绑定 <b>D1 数据库</b> 或 <b>KV 命名空间</b> 之一（二选一即可）：</p>
-<p><b>方式 A · D1（推荐，写配额更高）</b><br>
-<code>npx wrangler d1 create cfsub-db</code><br>
-绑定变量名：<code>IOT_DB</code></p>
-<p><b>方式 B · KV</b><br>
-<code>npx wrangler kv namespace create CF_SUB_KV</code><br>
-绑定变量名：<code>CF_SUB_KV</code></p>
-<p>绑定后重新部署即可正常使用。两者都绑定时优先使用 D1。</p></div></body></html>`;
+<h2>⚠️ 未检测到 KV 命名空间绑定</h2>
+<p>本面板的用户、配置、流量统计都存在 Cloudflare KV 里，必须先绑定 KV 命名空间。</p>
+<p><b>创建命令：</b><br><code>npx wrangler kv namespace create CF_SUB_KV</code></p>
+<p><b>绑定变量名必须填：</b><br><code>CF_SUB_KV</code></p>
+<p>绑定后重新部署即可正常使用。详细步骤见 README「部署方式一」。</p></div></body></html>`;
 
 export default {
   async fetch(request, env, ctx) {
@@ -33,7 +29,7 @@ export default {
 
       const url = new URL(request.url);
 
-      if (!hasKV(env)) return html(STORE_MISSING_HTML, 500);
+      if (!hasKV(env)) return html(KV_MISSING_HTML, 500);
 
       let cfg = await loadConfig(env);
       await loadUsage(env);

@@ -1,12 +1,18 @@
 import { SYSTEM_DEFAULTS } from './defaults.ts';
 import { applyEnvOverrides, stripInternal } from './env.ts';
-import { storeGet, storePut, hasStore, storageType, flushInterval } from './db.ts';
 import { today } from '../utils.ts';
 
 const CFG_KEY = 'sys_config';
 const USAGE_KEY = 'sys_usage';
 const LOG_KEY = 'sys_logs';
+
+/** 配置缓存时长 */
 const CACHE_TTL = 30_000;
+/**
+ * 流量落盘最小间隔。
+ * KV 免费版写额度为 1000 次/天，设成 120 秒后，即使全天有流量也最多 720 次写。
+ */
+const USAGE_FLUSH_GAP = 120_000;
 
 let cfgCache = null;
 let cfgCacheAt = 0;
@@ -14,14 +20,13 @@ let usageCache = null;
 let usageDirty = false;
 let lastUsageSync = 0;
 
-/** 是否绑定了任何可用存储（D1 或 KV） */
-export function hasKV(env) {
-  return hasStore(env);
+/** 兼容多种 KV 绑定名：CF_SUB_KV / KV / C / cfsub */
+function kvOf(env) {
+  return env.CF_SUB_KV || env.KV || env.C || env.cfsub || null;
 }
 
-/** 当前存储后端：'d1' | 'kv' | null */
-export function currentStorage(env) {
-  return storageType(env);
+export function hasKV(env) {
+  return !!kvOf(env);
 }
 
 /* ------------------------------- 配置 ------------------------------- */
@@ -29,14 +34,20 @@ export function currentStorage(env) {
 export async function loadConfig(env) {
   const now = Date.now();
   if (cfgCache && now - cfgCacheAt < CACHE_TTL) return cfgCache;
-  const stored = await storeGet(env, CFG_KEY);
+  const kv = kvOf(env);
+  let stored = null;
+  if (kv) {
+    try {
+      stored = await kv.get(CFG_KEY, { type: 'json' });
+    } catch {
+      stored = null;
+    }
+  }
   const cfg = { ...SYSTEM_DEFAULTS, ...(stored || {}) };
-  // 嵌套对象合并，避免旧版本缺失新字段
   cfg.protocols = { ...SYSTEM_DEFAULTS.protocols, ...(stored?.protocols || {}) };
   if (!Array.isArray(cfg.users)) cfg.users = [];
   if (!Array.isArray(cfg.panelApiKeys)) cfg.panelApiKeys = [];
   if (!Array.isArray(cfg.logs)) cfg.logs = [];
-  // 环境变量优先级最高
   cfg.__locked = applyEnvOverrides(cfg, env);
   cfgCache = cfg;
   cfgCacheAt = now;
@@ -47,7 +58,14 @@ export async function saveConfig(env, cfg) {
   cfg.updatedAt = Date.now();
   cfgCache = cfg;
   cfgCacheAt = Date.now();
-  await storePut(env, CFG_KEY, stripInternal(cfg));
+  const kv = kvOf(env);
+  if (kv) {
+    try {
+      await kv.put(CFG_KEY, JSON.stringify(stripInternal(cfg)));
+    } catch (e) {
+      console.error('saveConfig failed', e);
+    }
+  }
   return cfg;
 }
 
@@ -60,15 +78,20 @@ export function invalidateConfigCache() {
 
 export async function loadUsage(env) {
   if (usageCache) return usageCache;
-  const stored = await storeGet(env, USAGE_KEY);
+  const kv = kvOf(env);
+  let stored = null;
+  if (kv) {
+    try {
+      stored = await kv.get(USAGE_KEY, { type: 'json' });
+    } catch {
+      stored = null;
+    }
+  }
   usageCache = stored && stored.users ? stored : { users: {} };
   return usageCache;
 }
 
-/**
- * 累加流量（真实字节数）。
- * up = 上行（客户端→远端），down = 下行（远端→客户端）
- */
+/** 累加流量（真实字节数）。up = 上行，down = 下行 */
 export function addUsage(userId, up = 0, down = 0) {
   if (!usageCache) usageCache = { users: {} };
   const key = String(userId || 'default');
@@ -122,14 +145,23 @@ export function resetUsage(userId) {
 }
 
 /**
- * 定期落盘。
- * 间隔由后端决定：KV 60s（免费版写配额 1000/天），D1 15s。
+ * 落盘流量。
+ * force = true 时立即写入（用于「重置流量」这类需要马上生效的操作）；
+ * 否则至少间隔 120 秒才写一次，避免超出 KV 免费版 1000 次/天的写额度。
  */
 export async function flushUsage(env, force = false) {
   if (!usageDirty) return;
   const now = Date.now();
-  if (!force && now - lastUsageSync < flushInterval(env)) return;
-  await storePut(env, USAGE_KEY, usageCache);
+  if (!force && now - lastUsageSync < USAGE_FLUSH_GAP) return;
+  const kv = kvOf(env);
+  if (kv) {
+    try {
+      await kv.put(USAGE_KEY, JSON.stringify(usageCache));
+    } catch (e) {
+      console.error('flushUsage failed', e);
+      return;
+    }
+  }
   usageDirty = false;
   lastUsageSync = now;
 }
@@ -142,14 +174,23 @@ export async function addLog(env, type, detail) {
   cfg.logs.unshift({ ts: new Date().toISOString(), type, detail });
   if (cfg.logs.length > 100) cfg.logs = cfg.logs.slice(0, 100);
   cfgCache = cfg;
-  // 日志单独存一个键，避免撑大 sys_config
-  await storePut(env, LOG_KEY, cfg.logs);
+  const kv = kvOf(env);
+  if (kv) {
+    try {
+      await kv.put(LOG_KEY, JSON.stringify(cfg.logs));
+    } catch { /* ignore */ }
+  }
   return cfg.logs;
 }
 
 export async function loadLogs(env) {
-  const l = await storeGet(env, LOG_KEY);
-  if (Array.isArray(l)) return l;
+  const kv = kvOf(env);
+  if (kv) {
+    try {
+      const l = await kv.get(LOG_KEY, { type: 'json' });
+      if (Array.isArray(l)) return l;
+    } catch { /* ignore */ }
+  }
   const cfg = await loadConfig(env);
   return cfg.logs || [];
 }
