@@ -8,7 +8,7 @@
 
 ## 目录
 
-- [一、部署准备](#一部署准备)
+- [一、部署准备（存储后端：D1 还是 KV）](#一部署准备存储后端d1-还是-kv)
 - [二、三种部署方式](#二三种部署方式)
   - [方式一：一键安装器（推荐）](#方式一一键安装器推荐)
   - [方式二：Wrangler CLI 部署到 Worker](#方式二wrangler-cli-部署到-worker)
@@ -24,17 +24,50 @@
 
 ---
 
-## 一、部署准备
+## 一、部署准备（存储后端：D1 还是 KV）
 
-无论用哪种方式，都需要：
+> 关于「nahan 用 D1，你用 KV，能做用户管理吗」——
+> **能。** nahan 的 D1 只建了一张表来模拟 KV：
+> ```sql
+> CREATE TABLE IF NOT EXISTS kv_store (key TEXT PRIMARY KEY, value TEXT)
+> ```
+> 它全部键只有 6 个（`sys_config`、`sys_usage`、`sys_logs`…），本质是 key/value 存储。
+> 所以两种后端在**功能上完全等价**，用户增删改查、流量限制、到期判断没有任何区别。
+> 差别只在**配额与一致性**，本项目两种都支持，运行时自动选择，无需改代码。
+
+| | D1 数据库（推荐） | KV 命名空间 |
+| --- | --- | --- |
+| 免费额度 | 500 万行读 / **10 万写** 每天 | 10 万读 / **1000 写** 每天 |
+| 一致性 | 强一致 | 最终一致（全球传播最长 60s） |
+| 事务 | 支持 | 无 |
+| 流量落盘间隔 | 15 秒 | **60 秒**（为省写配额） |
+| 适用场景 | 用户多、流量大、要求统计准确 | 自用 / 小规模，配置最省事 |
+| 绑定变量名 | `IOT_DB`（也认 `DB`、`D1`） | `CF_SUB_KV`（也认 `KV`、`C`） |
+
+**两者都绑定时优先使用 D1。**
+
+> ⚠️ 需要注意的点：流量计数是高频写操作。用 KV 时落在免费版 1000 写/天的额度上，
+> 本项目已把 KV 的落盘间隔放宽到 60 秒来省配额，但持续大流量仍可能触顶。
+> 用户超过十几个或流量较大时，请改用 D1。
+
+其余准备条件：
 
 | 条件 | 说明 |
 | --- | --- |
 | Cloudflare 账号 | 免费版即可，[注册](https://dash.cloudflare.com/sign-up) |
 | Node.js 18+ | 构建用，[下载](https://nodejs.org/) |
-| 一个 KV 命名空间 | 绑定变量名必须是 **`CF_SUB_KV`**（也兼容 `KV` / `C`） |
 
-> ⚠️ **KV 是必须的**。配置、用户、流量统计、日志全部存在 KV 里。没有绑定 KV 时，面板会显示「未检测到 KV 绑定」的提示页。
+> 两个都没绑定时，面板会显示「未检测到存储绑定」的提示页，并给出创建命令。
+
+### 创建命令
+
+```bash
+# D1（推荐）
+npx wrangler d1 create cfsub-db      # 记下 database_id
+
+# 或 KV
+npx wrangler kv namespace create CF_SUB_KV   # 记下 id
+```
 
 ---
 
@@ -95,18 +128,29 @@ node scripts/build.js          # 产出 dist/_worker.js
 npx wrangler login
 ```
 
-**第 3 步：创建 KV 并填 ID**
+**第 3 步：创建存储并填 ID**
+
+推荐用 D1：
 
 ```bash
-npx wrangler kv namespace create CF_SUB_KV
+npx wrangler d1 create cfsub-db
 ```
 
-输出里有一行 `id = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"`，把它填进 `wrangler.toml`：
+把输出里的 `database_id` 填进 `wrangler.toml`（把这一段的注释 `#` 去掉）：
+
+```toml
+[[d1_databases]]
+binding = "IOT_DB"
+database_name = "cfsub-db"
+database_id = "这里粘贴 database_id"
+```
+
+也可以继续用 KV（把占位符 `YOUR_KV_NAMESPACE_ID_HERE` 换成真实 id）：
 
 ```toml
 [[kv_namespaces]]
 binding = "CF_SUB_KV"
-id = "这里粘贴刚才的 id"
+id = "这里粘贴 id"
 ```
 
 **第 4 步：部署**
@@ -160,10 +204,11 @@ npx wrangler pages deploy dist --project-name cfsub
 
 3. 保存并部署
 
-**⚠️ Pages 必须手动绑定 KV**（这一步不能省，否则面板无法保存配置）：
+**⚠️ Pages 必须手动绑定存储**（这一步不能省，否则面板无法保存配置）：
 
-> 控制台 → Workers 和 Pages → 你的项目 → **设置** → **Functions** → **KV 命名空间绑定** → 添加
-> 变量名：`CF_SUB_KV`　值：刚才创建的命名空间
+> 控制台 → Workers 和 Pages → 你的项目 → **设置** → **Functions**
+> → **D1 数据库绑定**（或 KV 命名空间绑定）→ 添加
+> 变量名：`IOT_DB`（用 KV 则填 `CF_SUB_KV`）　值：刚才创建的资源
 > 绑定后**重新部署一次**才能生效。
 
 **Pages 与 Worker 的差异**
@@ -384,6 +429,7 @@ src/
 ├── utils.ts                 # base64、UUID、字节工具、格式化
 ├── config/
 │   ├── defaults.ts          # 全局默认配置与用户默认字段
+│   ├── db.ts                # 存储抽象层：D1 优先、KV 兜底（同一套 key/value 接口）
 │   ├── env.ts               # 环境变量 → 配置映射（优先级最高）
 │   ├── resources.ts         # 内置 ProxyIP / 优选 IP / 端口 / NAT64 / 规则集
 │   └── store.ts             # KV 持久化（sys_config / sys_usage / sys_logs）
@@ -411,17 +457,26 @@ wrangler.toml                # 部署配置
 
 ## 十、常见问题
 
-**Q：KV 变量名必须是 `CF_SUB_KV` 吗？**
-A：默认读 `CF_SUB_KV`，找不到时会依次尝试 `KV`、`C`、`cfsub`。建议就用 `CF_SUB_KV`。
+**Q：不用 D1，只绑 KV，用户管理和流量限制真的都能用吗？**
+A：能。用户列表、增删改查、总流量/每日上限、到期时间、并发上限、流量重置、超限自动禁用，全部走同一套接口，与后端无关。nahan 的 D1 本身也只是用一张 `kv_store(key, value)` 表模拟 KV。唯一差别是 KV 免费版写配额只有 1000/天，流量大时建议换 D1。面板「📊 概览 → 存储后端」会显示当前用的是哪一个。
 
-**Q：面板打不开 / 一直显示「未检测到 KV 绑定」？**
-A：说明 KV 没绑上。Worker 检查 `wrangler.toml` 的 `[[kv_namespaces]]`；Pages 必须去控制台 → 设置 → Functions → KV 命名空间绑定里加，并且**重新部署一次**。
+**Q：怎么知道我现在用的是 D1 还是 KV？**
+A：「📊 概览 → 系统信息 → 存储后端」会显示 `✅ D1 数据库` 或 `✅ KV 命名空间`。两个都绑了就显示 D1。
+
+**Q：绑定变量名必须一致吗？**
+A：D1 认 `IOT_DB` / `DB` / `D1`；KV 认 `CF_SUB_KV` / `KV` / `C` / `cfsub`。建议按默认名字来。
+
+**Q：面板打不开 / 一直显示「未检测到存储绑定」？**
+A：说明 D1 和 KV 都没绑上。Worker 检查 `wrangler.toml` 的 `[[d1_databases]]` / `[[kv_namespaces]]`；Pages 必须去控制台 → 设置 → Functions → D1 数据库绑定（或 KV 命名空间绑定）里加，并且**重新部署一次**。
 
 **Q：改了配置没生效？**
 A：先看面板顶部有没有「🔒 由环境变量锁定」的提示，被锁定的字段改了不会生效。另外 KV 配置有 30 秒缓存，最多等 30 秒。
 
 **Q：流量统计准吗？**
-A：按上行 + 下行的**真实字节数**统计（nahan 只统计连接次数再乘估算值）。为降低 KV 写入，计数在内存中累计、最多 30 秒落盘一次，极端情况下可能丢最后 30 秒的计数。
+A：按上行 + 下行的**真实字节数**统计（nahan 只统计连接次数再乘估算值）。计数在 isolate 内存里累计后落盘：D1 每 15 秒、KV 每 60 秒（省写配额），连接结束时会强制落盘一次。极端情况下（进程被回收）可能丢最后一个周期的计数。
+
+**Q：超限后是怎么处理的？**
+A：每次新连接建立时会检查：到期、状态、总量上限、每日上限，任一不满足就断开（用户列表里状态自动变成「超限」）。已经在传的数据不会被掐断，是「下次连接生效」。想恢复就点用户行的「重置」清零，或调高上限。
 
 **Q：为什么订阅里有些节点连不上？**
 A：内置优选 IP / 域名是公开维护的资源，会随时间失效。可以在「高级设置」里关闭内置源、填入自己的优选 IP，或点「⚡ 智能解析」重新解一批。

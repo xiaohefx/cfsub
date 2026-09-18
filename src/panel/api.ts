@@ -1,4 +1,4 @@
-import { loadConfig, saveConfig, loadUsage, getUsage, resetUsage, flushUsage, addLog, loadLogs, hasKV } from '../config/store.ts';
+import { loadConfig, saveConfig, loadUsage, getUsage, resetUsage, flushUsage, addLog, loadLogs, hasKV, currentStorage } from '../config/store.ts';
 import { newUserDefaults, CURRENT_VERSION } from '../config/defaults.ts';
 import { smartCleanIps, collectPreferredIps } from '../core/preferred.ts';
 import { validateNameStrategy } from '../sub/build.ts';
@@ -308,6 +308,7 @@ export async function handleStats(req, url, body, env) {
         version: CURRENT_VERSION,
         isPaused: !!cfg.isPaused,
         hasKV: hasKV(env),
+        storage: currentStorage(env), // 'd1' | 'kv' | null
         mode: cfg.mode,
         ports: cfg.ports,
       },

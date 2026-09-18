@@ -16,6 +16,8 @@ cd "$ROOT"
 
 WORKER_NAME="${WORKER_NAME:-cfsub}"
 KV_BINDING="CF_SUB_KV"
+D1_BINDING="IOT_DB"
+D1_NAME="${D1_NAME:-cfsub-db}"
 
 say()  { printf "%b\n" "$*"; }
 info() { printf "${C_CYAN}▶${C_RESET} %b\n" "$*"; }
@@ -103,22 +105,57 @@ install_worker() {
   WORKER_NAME="$(echo "$WORKER_NAME" | tr ' ' '-')"
 
   say ""
-  info "创建 KV 命名空间 ${KV_BINDING} …"
-  kv_out="$(wr kv namespace create "$KV_BINDING" 2>&1 || true)"
-  say "$kv_out"
-  KV_ID="$(printf '%s' "$kv_out" | grep -oE '[0-9a-f]{32}' | head -n1 || true)"
+  say "  ${C_BOLD}选择存储后端${C_RESET}（都绑定时优先用 D1）："
+  say "    ${C_BOLD}1)${C_RESET} D1 数据库      ${C_DIM}推荐：10 万写/天，适合流量统计${C_RESET}"
+  say "    ${C_BOLD}2)${C_RESET} KV 命名空间    ${C_DIM}配置简单，但免费版仅 1000 写/天${C_RESET}"
+  ask "请选择 ${C_DIM}[1-2，默认 1]${C_RESET}: "
+  read -r st_choice
+  st_choice="${st_choice:-1}"
 
-  if [ -z "${KV_ID:-}" ]; then
-    warn "未能自动解析 KV ID，尝试从已有列表获取…"
-    kv_list="$(wr kv namespace list 2>/dev/null || true)"
-    KV_ID="$(printf '%s' "$kv_list" | grep -B2 -A2 "\"title\".*${KV_BINDING}" | grep -oE '[0-9a-f]{32}' | head -n1 || true)"
+  STORE_BLOCK=""
+  if [ "$st_choice" = "2" ]; then
+    info "创建 KV 命名空间 ${KV_BINDING} …"
+    kv_out="$(wr kv namespace create "$KV_BINDING" 2>&1 || true)"
+    say "$kv_out"
+    STORE_ID="$(printf '%s' "$kv_out" | grep -oE '[0-9a-f]{32}' | head -n1 || true)"
+    if [ -z "${STORE_ID:-}" ]; then
+      warn "未能自动解析 KV ID，尝试从已有列表获取…"
+      kv_list="$(wr kv namespace list 2>/dev/null || true)"
+      STORE_ID="$(printf '%s' "$kv_list" | grep -B2 -A2 "\"title\".*${KV_BINDING}" | grep -oE '[0-9a-f]{32}' | head -n1 || true)"
+    fi
+    if [ -z "${STORE_ID:-}" ]; then
+      ask "请手动粘贴 KV 命名空间 ID: "
+      read -r STORE_ID
+    fi
+    if [ -z "${STORE_ID:-}" ]; then err "KV ID 不能为空，已中止"; exit 1; fi
+    ok "KV ID: $STORE_ID"
+    STORE_BLOCK="[[kv_namespaces]]
+binding = \"${KV_BINDING}\"
+id = \"${STORE_ID}\""
+  else
+    ask "请输入 D1 数据库名 ${C_DIM}(默认 ${D1_NAME})${C_RESET}: "
+    read -r input_db
+    D1_NAME="${input_db:-$D1_NAME}"
+    info "创建 D1 数据库 ${D1_NAME} …"
+    d1_out="$(wr d1 create "$D1_NAME" 2>&1 || true)"
+    say "$d1_out"
+    STORE_ID="$(printf '%s' "$d1_out" | grep -oiE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' | head -n1 || true)"
+    if [ -z "${STORE_ID:-}" ]; then
+      warn "未能自动解析 D1 ID，尝试从已有列表获取…"
+      d1_list="$(wr d1 list --json 2>/dev/null || true)"
+      STORE_ID="$(printf '%s' "$d1_list" | grep -B3 -A3 "\"name\".*${D1_NAME}" | grep -oiE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' | head -n1 || true)"
+    fi
+    if [ -z "${STORE_ID:-}" ]; then
+      ask "请手动粘贴 D1 database_id: "
+      read -r STORE_ID
+    fi
+    if [ -z "${STORE_ID:-}" ]; then err "D1 ID 不能为空，已中止"; exit 1; fi
+    ok "D1 ID: $STORE_ID"
+    STORE_BLOCK="[[d1_databases]]
+binding = \"${D1_BINDING}\"
+database_name = \"${D1_NAME}\"
+database_id = \"${STORE_ID}\""
   fi
-  if [ -z "${KV_ID:-}" ]; then
-    ask "请手动粘贴 KV 命名空间 ID: "
-    read -r KV_ID
-  fi
-  if [ -z "${KV_ID:-}" ]; then err "KV ID 不能为空，已中止"; exit 1; fi
-  ok "KV ID: $KV_ID"
 
   cat > wrangler.toml << EOF
 # 由 setup.sh 自动生成 —— $(date '+%Y-%m-%d %H:%M:%S')
@@ -127,9 +164,7 @@ main = "dist/_worker.js"
 compatibility_date = "2025-06-01"
 compatibility_flags = ["nodejs_compat"]
 
-[[kv_namespaces]]
-binding = "${KV_BINDING}"
-id = "${KV_ID}"
+${STORE_BLOCK}
 
 # 自动更新定时任务（每 6 小时检查一次 GitHub 版本）
 [triggers]
@@ -176,13 +211,38 @@ install_pages() {
   proj="$(echo "$proj" | tr ' ' '-')"
 
   say ""
-  info "创建 KV 命名空间 ${KV_BINDING} …"
-  kv_out="$(wr kv namespace create "$KV_BINDING" 2>&1 || true)"
-  say "$kv_out"
-  KV_ID="$(printf '%s' "$kv_out" | grep -oE '[0-9a-f]{32}' | head -n1 || true)"
-  if [ -z "${KV_ID:-}" ]; then
-    ask "请手动粘贴 KV 命名空间 ID: "
-    read -r KV_ID
+  say "  ${C_BOLD}选择存储后端${C_RESET}："
+  say "    ${C_BOLD}1)${C_RESET} D1 数据库      ${C_DIM}推荐${C_RESET}"
+  say "    ${C_BOLD}2)${C_RESET} KV 命名空间"
+  ask "请选择 ${C_DIM}[1-2，默认 1]${C_RESET}: "
+  read -r st_choice
+  st_choice="${st_choice:-1}"
+
+  if [ "$st_choice" = "2" ]; then
+    STORE_LABEL="KV 命名空间绑定"
+    STORE_BINDING="$KV_BINDING"
+    info "创建 KV 命名空间 ${KV_BINDING} …"
+    kv_out="$(wr kv namespace create "$KV_BINDING" 2>&1 || true)"
+    say "$kv_out"
+    STORE_ID="$(printf '%s' "$kv_out" | grep -oE '[0-9a-f]{32}' | head -n1 || true)"
+    if [ -z "${STORE_ID:-}" ]; then
+      ask "请手动粘贴 KV 命名空间 ID: "
+      read -r STORE_ID
+    fi
+  else
+    STORE_LABEL="D1 数据库绑定"
+    STORE_BINDING="$D1_BINDING"
+    ask "请输入 D1 数据库名 ${C_DIM}(默认 ${D1_NAME})${C_RESET}: "
+    read -r input_db
+    D1_NAME="${input_db:-$D1_NAME}"
+    info "创建 D1 数据库 ${D1_NAME} …"
+    d1_out="$(wr d1 create "$D1_NAME" 2>&1 || true)"
+    say "$d1_out"
+    STORE_ID="$(printf '%s' "$d1_out" | grep -oiE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' | head -n1 || true)"
+    if [ -z "${STORE_ID:-}" ]; then
+      ask "请手动粘贴 D1 database_id: "
+      read -r STORE_ID
+    fi
   fi
 
   say ""
@@ -195,9 +255,9 @@ install_pages() {
   line
   if [ -n "$PAGES_URL" ]; then ok "部署成功：${PAGES_URL}"; else warn "请在 Cloudflare 控制台查看 Pages 地址"; fi
   say ""
-  say "  ${C_BOLD}重要${C_RESET}：Pages 需要在控制台手动绑定 KV，否则面板无法保存配置："
-  say "   控制台 → Workers 和 Pages → ${proj} → 设置 → Functions → KV 命名空间绑定"
-  say "   变量名：${C_GREEN}${KV_BINDING}${C_RESET}   值：${C_GREEN}${KV_ID:-<上面创建的命名空间>}${C_RESET}"
+  say "  ${C_BOLD}重要${C_RESET}：Pages 需要在控制台手动绑定存储，否则面板无法保存配置："
+  say "   控制台 → Workers 和 Pages → ${proj} → 设置 → Functions → ${STORE_LABEL}"
+  say "   变量名：${C_GREEN}${STORE_BINDING}${C_RESET}   值：${C_GREEN}${STORE_ID:-<上面创建的资源>}${C_RESET}"
   say "   绑定后重新部署一次即可。"
   say ""
   say "  ${C_BOLD}管理面板${C_RESET}：${PAGES_URL:-<项目域名>}/sub/dash"

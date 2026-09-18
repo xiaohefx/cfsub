@@ -1,13 +1,21 @@
 # CFSub —— Cloudflare 订阅管理面板
-# 部署前请先执行：npx wrangler kv namespace create CF_SUB_KV
-# 然后把生成的 id 填到下面的 id 字段
+#
+# 存储二选一（都绑定时优先用 D1）：
+#   A. D1（推荐）：npx wrangler d1 create cfsub-db   → 填 database_id，绑定名 IOT_DB
+#   B. KV        ：npx wrangler kv namespace create CF_SUB_KV → 填 id，绑定名 CF_SUB_KV
 
 name = "cfsub"
 main = "dist/_worker.js"
 compatibility_date = "2025-06-01"
 compatibility_flags = ["nodejs_compat"]
 
-# KV 命名空间（面板配置、流量统计、日志都存这里）
+# ---- 方式 A：D1 数据库（推荐，写配额高，适合流量统计）----
+# [[d1_databases]]
+# binding = "IOT_DB"
+# database_name = "cfsub-db"
+# database_id = "YOUR_D1_DATABASE_ID_HERE"
+
+# ---- 方式 B：KV 命名空间 ----
 [[kv_namespaces]]
 binding = "CF_SUB_KV"
 id = "YOUR_KV_NAMESPACE_ID_HERE"
