@@ -1,0 +1,932 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CFSub 管理面板</title>
+<style>
+:root{
+  --bg:#0b1120; --bg2:#0f172a; --card:#111c33; --card2:#16223c; --bd:#1e2b47;
+  --fg:#e2e8f0; --mut:#94a3b8; --acc:#38bdf8; --ok:#34d399; --warn:#fbbf24; --err:#f87171;
+  --r:14px;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{background:var(--bg);color:var(--fg);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;font-size:14px;line-height:1.6}
+a{color:var(--acc);text-decoration:none}
+code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+::-webkit-scrollbar{width:8px;height:8px}
+::-webkit-scrollbar-thumb{background:#243354;border-radius:8px}
+
+/* ---------- 登录 ---------- */
+#login{position:fixed;inset:0;background:radial-gradient(1200px 600px at 50% -10%,#1e3a5f33,transparent),var(--bg);z-index:99;display:flex;align-items:center;justify-content:center}
+#login .box{width:380px;max-width:92vw;background:var(--card);border:1px solid var(--bd);border-radius:18px;padding:32px}
+#login h2{margin:0 0 6px;font-size:22px}
+#login p{color:var(--mut);font-size:13px;margin:0 0 20px}
+
+/* ---------- 布局 ---------- */
+#app{display:none;min-height:100vh}
+.sidebar{position:fixed;left:0;top:0;bottom:0;width:210px;background:var(--bg2);border-right:1px solid var(--bd);padding:18px 12px;overflow-y:auto;z-index:10}
+.brand{font-size:17px;font-weight:700;margin-bottom:4px;display:flex;align-items:center;gap:8px}
+.brand span{font-size:11px;color:var(--mut);font-weight:400}
+.nav{display:flex;flex-direction:column;gap:2px;margin-top:18px}
+.nav button{display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:none;border:0;color:var(--mut);padding:9px 12px;border-radius:10px;cursor:pointer;font-size:14px}
+.nav button:hover{background:#1b2942;color:var(--fg)}
+.nav button.on{background:linear-gradient(90deg,#0ea5e933,transparent);color:var(--fg);font-weight:600;border-left:2px solid var(--acc)}
+.main{margin-left:210px;padding:22px 26px 90px;max-width:1180px}
+h1.page{font-size:20px;margin:0 0 18px}
+h3.sec{font-size:14px;margin:22px 0 10px;color:var(--acc);border-left:3px solid var(--acc);padding-left:8px}
+
+/* ---------- 组件 ---------- */
+.card{background:var(--card);border:1px solid var(--bd);border-radius:var(--r);padding:16px;margin-bottom:14px}
+.grid{display:grid;gap:12px}
+.g4{grid-template-columns:repeat(4,1fr)}
+.g3{grid-template-columns:repeat(3,1fr)}
+.g2{grid-template-columns:repeat(2,1fr)}
+@media(max-width:900px){.g4,.g3,.g2{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:620px){
+  .sidebar{position:static;width:auto;display:flex;overflow-x:auto;padding:10px}
+  .nav{flex-direction:row;margin-top:0}
+  .main{margin-left:0;padding:16px 14px 90px}
+  .g4,.g3,.g2{grid-template-columns:1fr}
+}
+.stat{background:var(--card2);border:1px solid var(--bd);border-radius:12px;padding:14px}
+.stat .k{font-size:12px;color:var(--mut)}
+.stat .v{font-size:22px;font-weight:700;margin-top:2px}
+.stat .v small{font-size:12px;font-weight:400;color:var(--mut)}
+
+label.f{display:block;font-size:12px;color:var(--mut);margin:12px 0 5px}
+input,select,textarea{width:100%;background:#0b1120;border:1px solid var(--bd);color:var(--fg);border-radius:9px;padding:9px 11px;font-size:13px;font-family:inherit}
+textarea{min-height:90px;font-family:ui-monospace,monospace;font-size:12px;resize:vertical}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--acc)}
+input[readonly]{color:var(--mut)}
+.chk{display:flex;align-items:center;gap:8px;margin:10px 0;font-size:13px}
+.chk input{width:auto}
+.hint{font-size:11px;color:var(--mut);margin-top:4px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.row>*{flex:1;min-width:150px}
+
+button.btn{background:var(--acc);color:#04202e;border:0;border-radius:9px;padding:9px 16px;font-size:13px;font-weight:600;cursor:pointer}
+button.btn:hover{opacity:.88}
+button.gh{background:transparent;color:var(--fg);border:1px solid var(--bd)}
+button.gh:hover{background:#1b2942}
+button.dg{background:transparent;color:var(--err);border:1px solid #7f1d1d}
+button.sm{padding:5px 10px;font-size:12px;border-radius:7px}
+button:disabled{opacity:.5;cursor:not-allowed}
+
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--bd)}
+th{color:var(--mut);font-weight:500;font-size:12px}
+tr:hover td{background:#16223c55}
+
+.tag{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;border:1px solid}
+.tag.ok{color:var(--ok);border-color:#10b98155;background:#10b9811a}
+.tag.warn{color:var(--warn);border-color:#f59e0b55;background:#f59e0b1a}
+.tag.err{color:var(--err);border-color:#ef444455;background:#ef44441a}
+.tag.mut{color:var(--mut);border-color:#47556955}
+
+.bar{height:6px;background:#0b1120;border-radius:5px;overflow:hidden;margin-top:4px}
+.bar>i{display:block;height:100%;background:linear-gradient(90deg,#38bdf8,#6366f1)}
+
+.toast{position:fixed;top:16px;right:16px;z-index:200;display:flex;flex-direction:column;gap:8px}
+.toast>div{background:var(--card2);border:1px solid var(--bd);border-left:3px solid var(--acc);border-radius:10px;padding:10px 16px;font-size:13px;box-shadow:0 10px 30px #0006;animation:si .2s ease}
+.toast>div.ok{border-left-color:var(--ok)}
+.toast>div.err{border-left-color:var(--err)}
+@keyframes si{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:none}}
+
+.savebar{position:fixed;right:20px;bottom:20px;display:flex;gap:10px;z-index:50}
+.savebar button{padding:11px 20px;border-radius:11px;font-size:14px}
+.dirty{box-shadow:0 0 0 2px var(--warn)}
+
+.modal{position:fixed;inset:0;background:#000a;display:none;align-items:center;justify-content:center;z-index:120;padding:20px}
+.modal.on{display:flex}
+.modal .box{background:var(--card);border:1px solid var(--bd);border-radius:16px;padding:22px;width:560px;max-width:96vw;max-height:88vh;overflow-y:auto}
+.modal h3{margin:0 0 14px;font-size:16px}
+
+.banner{background:linear-gradient(90deg,#0ea5e922,#6366f122);border:1px solid #0ea5e944;border-radius:12px;padding:12px 16px;margin-bottom:14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+
+.linkbox{display:flex;gap:8px;align-items:center;margin-bottom:8px}
+.linkbox input{flex:1}
+.qr{width:150px;height:150px;background:#fff;border-radius:10px;padding:6px}
+.logline{font-size:12px;padding:6px 0;border-bottom:1px solid #1e2b4788;display:flex;gap:10px}
+.logline .t{color:var(--mut);font-family:ui-monospace,monospace;min-width:150px}
+details{margin-bottom:8px}
+summary{cursor:pointer;color:var(--mut);font-size:13px;padding:6px 0}
+.hide{display:none!important}
+</style>
+</head>
+<body>
+
+<!-- ================= 登录 ================= -->
+<div id="login">
+  <div class="box">
+    <h2>🔐 CFSub 管理面板</h2>
+    <p>请输入管理密钥以继续</p>
+    <label class="f">管理密钥</label>
+    <input id="pwd" type="password" placeholder="默认 admin" autocomplete="current-password">
+    <div style="margin-top:18px"><button class="btn" style="width:100%" onclick="doLogin()">登 录</button></div>
+    <div class="hint" id="loginErr" style="color:var(--err)"></div>
+  </div>
+</div>
+
+<!-- ================= 主体 ================= -->
+<div id="app">
+  <div class="sidebar">
+    <div class="brand">🌐 CFSub <span id="ver"></span></div>
+    <div class="nav">
+      <button class="on" data-tab="overview" onclick="tab('overview')">📊 概览</button>
+      <button data-tab="info" onclick="tab('info')">🔗 节点信息</button>
+      <button data-tab="network" onclick="tab('network')">🌍 网络诊断</button>
+      <button data-tab="users" onclick="tab('users')">👥 用户管理</button>
+      <button data-tab="settings" onclick="tab('settings')">⚙️ 基本设置</button>
+      <button data-tab="advanced" onclick="tab('advanced')">🧩 高级设置</button>
+      <button data-tab="logs" onclick="tab('logs')">📜 日志</button>
+      <button data-tab="help" onclick="tab('help')">❓ 帮助</button>
+    </div>
+  </div>
+
+  <div class="main">
+    <!-- ---------- 概览 ---------- -->
+    <div id="v-overview" class="view">
+      <h1 class="page">📊 概览</h1>
+      <div id="lockedBanner"></div>
+      <div id="updateBanner"></div>
+      <div class="grid g4" id="statCards"></div>
+      <h3 class="sec">系统信息</h3>
+      <div class="card" id="sysInfo"></div>
+      <h3 class="sec">最近日志</h3>
+      <div class="card" id="recentLogs"></div>
+    </div>
+
+    <!-- ---------- 节点信息 ---------- -->
+    <div id="v-info" class="view hide">
+      <h1 class="page">🔗 节点信息</h1>
+      <div id="profiles"></div>
+    </div>
+
+    <!-- ---------- 网络诊断 ---------- -->
+    <div id="v-network" class="view hide">
+      <h1 class="page">🌍 网络诊断</h1>
+      <div class="grid g2">
+        <div class="card">
+          <h3 class="sec" style="margin-top:0">连接信息</h3>
+          <div id="netInfo"></div>
+        </div>
+        <div class="card">
+          <h3 class="sec" style="margin-top:0">延迟测试</h3>
+          <label class="f">测试目标（IP 或域名）</label>
+          <input id="pingTarget" placeholder="例如 1.1.1.1 或 cf.090227.xyz">
+          <div class="row" style="margin-top:10px">
+            <button class="btn" onclick="runPing()">开始测试</button>
+          </div>
+          <div class="hint" id="pingResult"></div>
+        </div>
+      </div>
+      <div class="card">
+        <h3 class="sec" style="margin-top:0">⚡ 智能解析 Clean IP</h3>
+        <p class="hint">把一批常用域名通过 DoH 解析成可用 IP，自动填入下方「Clean IP」。</p>
+        <div class="row">
+          <button class="btn" onclick="smartClean()">开始解析</button>
+          <button class="btn gh" onclick="previewPreferred()">预览当前优选 IP</button>
+        </div>
+        <div class="hint" id="cleanResult" style="margin-top:10px"></div>
+      </div>
+    </div>
+
+    <!-- ---------- 用户管理 ---------- -->
+    <div id="v-users" class="view hide">
+      <h1 class="page">👥 用户管理</h1>
+      <div class="grid g4" id="userStat"></div>
+      <div class="card">
+        <div class="row">
+          <input id="userSearch" placeholder="搜索用户名 / ID / 备注" oninput="renderUsers()" style="flex:2">
+          <button class="btn" onclick="openUserForm()">➕ 新增用户</button>
+          <button class="btn gh" onclick="loadUsers()">刷新</button>
+        </div>
+      </div>
+      <div class="card" style="padding:0;overflow-x:auto">
+        <table>
+          <thead><tr><th>用户</th><th>状态</th><th>总流量</th><th>今日</th><th>到期</th><th>并发</th><th style="width:290px">操作</th></tr></thead>
+          <tbody id="userTable"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ---------- 基本设置 ---------- -->
+    <div id="v-settings" class="view hide">
+      <h1 class="page">⚙️ 基本设置</h1>
+
+      <div class="card">
+        <h3 class="sec" style="margin-top:0">面板</h3>
+        <div class="row">
+          <div><label class="f">面板名称</label><input id="cfg-name" data-cfg="name"></div>
+          <div><label class="f">面板路径</label><input id="cfg-apiRoute" data-cfg="apiRoute"><div class="hint">访问 /{路径}/dash 打开本面板</div></div>
+        </div>
+        <label class="f">主管理密钥</label>
+        <div class="row">
+          <input id="newMasterKey" type="password" placeholder="留空表示不修改">
+          <button class="btn gh" onclick="changeMasterKey()">修改密钥</button>
+        </div>
+        <label class="f"><input type="checkbox" id="cfg-isPaused" data-cfg="isPaused" class="chk"> </label>
+        <div class="chk"><input type="checkbox" id="chk-isPaused"><span>🛑 Kill Switch（开启后停止一切代理转发）</span></div>
+      </div>
+
+      <div class="card">
+        <h3 class="sec" style="margin-top:0">节点凭证</h3>
+        <div class="row">
+          <div><label class="f">主 UUID</label><input id="cfg-uuid" data-cfg="uuid" class="mono"></div>
+          <div><label class="f">Trojan 密码（留空则等于主 UUID）</label><input id="cfg-trojanPassword" data-cfg="trojanPassword"></div>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <button class="btn gh" onclick="regenUuid()">🎲 重新生成 UUID</button>
+        </div>
+        <div class="hint">修改或重新生成 UUID 后，所有已导入的旧节点会立即失效，需要在「节点信息」重新复制订阅链接。</div>
+      </div>
+
+      <div class="card">
+        <h3 class="sec" style="margin-top:0">协议与端口</h3>
+        <label class="f">协议模式</label>
+        <select id="cfg-mode" data-cfg="mode">
+          <option value="vless">仅 VLESS</option>
+          <option value="trojan">仅 Trojan</option>
+          <option value="xhttp">仅 XHTTP</option>
+          <option value="both">VLESS + Trojan</option>
+          <option value="all">全部（VLESS + Trojan + XHTTP）</option>
+        </select>
+        <label class="f">端口（可多选）</label>
+        <div id="portPicker" class="row"></div>
+        <div class="row">
+          <div><label class="f">WS 路径</label><input id="cfg-path" data-cfg="path"></div>
+          <div><label class="f">uTLS 指纹</label>
+            <select id="cfg-fp" data-cfg="fp">
+              <option>chrome</option><option>firefox</option><option>safari</option><option>ios</option>
+              <option>android</option><option>edge</option><option>random</option><option>randomized</option>
+            </select>
+          </div>
+        </div>
+        <div class="row">
+          <div><label class="f">多域名（逗号分隔，留空用当前域名）</label><input id="cfg-hosts" data-cfg="hosts" placeholder="a.example.com,b.example.com"></div>
+          <div><label class="f">ALPN（留空自动协商）</label>
+            <select id="cfg-alpn" data-cfg="alpn">
+              <option value=""></option><option>h3</option><option>h2</option><option>http/1.1</option>
+              <option>h3,h2</option><option>h2,http/1.1</option><option>h3,h2,http/1.1</option>
+            </select>
+          </div>
+        </div>
+        <div class="chk"><input type="checkbox" id="chk-ech"><span>启用 ECH（加密 Client Hello）</span></div>
+        <div class="row">
+          <div><label class="f">ECH 域名</label><input id="cfg-echDomain" data-cfg="echDomain"></div>
+          <div><label class="f">ECH DoH</label><input id="cfg-echDns" data-cfg="echDns"></div>
+        </div>
+        <div class="chk"><input type="checkbox" id="chk-enableEarlyData"><span>启用 0-RTT Early Data（ed=2560）</span></div>
+        <div class="chk"><input type="checkbox" id="chk-allowInsecure"><span>允许不安全证书（allowInsecure）</span></div>
+      </div>
+
+      <div class="card">
+        <h3 class="sec" style="margin-top:0">订阅</h3>
+        <div class="row">
+          <div><label class="f">命名前缀</label><input id="cfg-namePrefix" data-cfg="namePrefix"></div>
+          <div><label class="f">命名策略</label>
+            <select id="cfg-nameStrategy" data-cfg="nameStrategy">
+              <option value="default">前缀-序号</option>
+              <option value="prefix-user-port">前缀-用户-端口</option>
+              <option value="type-user-port">协议-用户-端口</option>
+              <option value="user-port">用户-端口</option>
+              <option value="ip">IP名-端口</option>
+              <option value="host-port-user">域名-端口-用户</option>
+            </select>
+          </div>
+        </div>
+        <div class="row">
+          <div><label class="f">每用户最大节点数</label><input id="cfg-maxConfigs" data-cfg="maxConfigs" type="number"></div>
+          <div><label class="f">订阅 UA 白名单（含此串的 UA 直接返回节点）</label><input id="cfg-subUserAgent" data-cfg="subUserAgent"></div>
+        </div>
+        <label class="f">订阅转换后端（用于外部转换）</label>
+        <input id="cfg-subConverter" data-cfg="subConverter">
+      </div>
+
+      <div class="card">
+        <h3 class="sec" style="margin-top:0">新用户默认值</h3>
+        <div class="row">
+          <div><label class="f">默认总流量（GB，0=不限）</label><input id="cfg-limitTotalGb" data-cfg="limitTotalGb" type="number"></div>
+          <div><label class="f">默认每日流量（GB，0=不限）</label><input id="cfg-limitDailyGb" data-cfg="limitDailyGb" type="number"></div>
+          <div><label class="f">默认有效天数（0=永久）</label><input id="cfg-expiryDays" data-cfg="expiryDays" type="number"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3 class="sec" style="margin-top:0">GitHub 自动更新</h3>
+        <div class="row">
+          <div><label class="f">仓库（owner/repo）</label><input id="cfg-githubRepo" data-cfg="githubRepo" placeholder="yourname/cfsub"></div>
+          <div><label class="f">部署目标</label>
+            <select id="cfg-deployTarget" data-cfg="deployTarget">
+              <option value="worker">Cloudflare Worker</option>
+              <option value="pages">Cloudflare Pages</option>
+            </select>
+          </div>
+        </div>
+        <div class="chk"><input type="checkbox" id="chk-autoUpdate"><span>开启自动更新（Cron 定时检查并部署）</span></div>
+        <div class="row">
+          <div><label class="f">Cloudflare 账户 ID</label><input id="cfg-cfAccountId" data-cfg="cfAccountId"></div>
+          <div><label class="f">Cloudflare API Token</label><input id="cfg-cfApiToken" data-cfg="cfApiToken" type="password"></div>
+        </div>
+        <div class="row">
+          <div><label class="f">Worker 名称</label><input id="cfg-cfWorkerName" data-cfg="cfWorkerName"></div>
+          <div><label class="f">Pages 项目名</label><input id="cfg-cfPagesProject" data-cfg="cfPagesProject"></div>
+        </div>
+        <div class="row">
+          <button class="btn gh" onclick="checkUpdate()">检查更新</button>
+          <button class="btn" onclick="doUpdate(false)">部署最新版</button>
+          <button class="btn gh" onclick="doUpdate(true)">强制覆盖部署</button>
+        </div>
+        <div class="hint" id="updateResult"></div>
+      </div>
+    </div>
+
+    <!-- ---------- 高级设置 ---------- -->
+    <div id="v-advanced" class="view hide">
+      <h1 class="page">🧩 高级设置</h1>
+
+      <div class="card">
+        <h3 class="sec" style="margin-top:0">优选 IP</h3>
+        <div class="chk"><input type="checkbox" id="chk-enableOfficialIp"><span>启用内置官方直连地址池（10 个 Cloudflare 官方 IP）</span></div>
+        <div class="chk"><input type="checkbox" id="chk-enablePreferredDomain"><span>启用内置优选反代域名（21 个）</span></div>
+        <div class="chk"><input type="checkbox" id="chk-enablePreferredIp"><span>启用远程优选 IP 源（cmliu CF-CIDR 运营商分段）</span></div>
+        <div class="chk"><input type="checkbox" id="chk-enableRemotePreferred"><span>允许拉取远程优选源</span></div>
+        <label class="f">自定义优选 IP（每行一条：IP:端口#备注 或 IP#备注）</label>
+        <textarea id="cfg-customPreferred" data-cfg="customPreferred" placeholder="1.1.1.1:443#香港节点&#10;8.8.8.8:443#Google"></textarea>
+        <label class="f">自定义远程优选源 URL（逗号分隔）</label>
+        <input id="cfg-preferredUrls" data-cfg="preferredUrls" placeholder="https://example.com/ips.txt">
+      </div>
+
+      <div class="card">
+        <h3 class="sec" style="margin-top:0">反代（ProxyIP）</h3>
+        <div class="row">
+          <div><label class="f">反代模式</label>
+            <select id="cfg-proxyIpMode" data-cfg="proxyIpMode">
+              <option value="auto">自动（官方直连 + 机房反代 + 优选域名）</option>
+              <option value="region">指定地区</option>
+              <option value="custom">自定义</option>
+              <option value="off">关闭（仅直连）</option>
+            </select>
+          </div>
+          <div><label class="f">指定地区</label>
+            <select id="cfg-proxyIpRegion" data-cfg="proxyIpRegion">
+              <option value="">（未指定）</option>
+              <option>HK</option><option>US</option><option>SG</option><option>JP</option><option>KR</option>
+              <option>DE</option><option>SE</option><option>NL</option><option>FI</option><option>GB</option>
+              <option>Oracle</option><option>DigitalOcean</option><option>Vultr</option><option>Multacom</option>
+            </select>
+          </div>
+        </div>
+        <div class="row">
+          <div><label class="f">自定义 ProxyIP（支持 IP / 域名 / 带端口）</label><input id="cfg-customProxyIp" data-cfg="customProxyIp" placeholder="1.2.3.4:443 或 proxy.example.com:8443"></div>
+          <div><label class="f">兜底反代</label><input id="cfg-backupProxyIp" data-cfg="backupProxyIp"></div>
+        </div>
+        <div class="row">
+          <div><label class="f">NAT64 前缀（留空关闭）</label><input id="cfg-nat64" data-cfg="nat64" placeholder="[2602:fc59:b0:64::]"></div>
+          <div><label class="f">Clean IP（逗号分隔）</label><input id="cfg-cleanIps" data-cfg="cleanIps"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3 class="sec" style="margin-top:0">出站代理</h3>
+        <label class="f">代理地址（socks5:// http:// https:// ，支持 user:pass@host:port）</label>
+        <input id="cfg-outboundProxy" data-cfg="outboundProxy" placeholder="socks5://user:pass@1.2.3.4:1080">
+        <label class="f">出站方式</label>
+        <select id="cfg-outboundMode" data-cfg="outboundMode">
+          <option value="auto">自动（先直连，失败走反代/代理）</option>
+          <option value="direct-first">优先直连，失败再走代理</option>
+          <option value="proxy-first">优先走代理，失败再直连</option>
+          <option value="proxy-only">只走代理（不回落，防出口 IP 泄漏）</option>
+        </select>
+      </div>
+
+      <div class="card">
+        <h3 class="sec" style="margin-top:0">网络</h3>
+        <div class="row">
+          <div><label class="f">DoH 解析服务</label><input id="cfg-customDns" data-cfg="customDns"></div>
+          <div><label class="f">解析 IP</label><input id="cfg-resolveIp" data-cfg="resolveIp"></div>
+        </div>
+        <label class="f">伪装主页（访问根路径时反向代理，逗号分隔随机）</label>
+        <input id="cfg-maintenanceHost" data-cfg="maintenanceHost">
+      </div>
+
+      <div class="card">
+        <h3 class="sec" style="margin-top:0">Telegram 通知</h3>
+        <div class="row">
+          <div><label class="f">Bot Token</label><input id="cfg-tgToken" data-cfg="tgToken"></div>
+          <div><label class="f">Chat ID</label><input id="cfg-tgChatId" data-cfg="tgChatId"></div>
+          <div><label class="f">管理员 ID</label><input id="cfg-tgAdminId" data-cfg="tgAdminId"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ---------- 日志 ---------- -->
+    <div id="v-logs" class="view hide">
+      <h1 class="page">📜 日志</h1>
+      <div class="card"><div class="row"><button class="btn gh" onclick="loadLogs()">刷新</button></div></div>
+      <div class="card" id="logList"></div>
+    </div>
+
+    <!-- ---------- 帮助 ---------- -->
+    <div id="v-help" class="view hide">
+      <h1 class="page">❓ 帮助</h1>
+      <div class="card">
+        <details open><summary>订阅地址怎么用？</summary>
+          <p>在「节点信息」页复制对应格式的链接，粘贴到 Clash / Sing-box / v2rayN 等客户端的「从 URL 导入」即可。通用链接会根据客户端 UA 自动返回对应格式。</p></details>
+        <details><summary>如何限制用户流量？</summary>
+          <p>在「用户管理」里给每个用户设置总流量上限与每日上限（单位 GB）。超限后该用户会被自动拒绝连接，可在用户列表点击「重置」清零。</p></details>
+        <details><summary>内置优选 IP 从哪里来？</summary>
+          <p>内置资源来自 byJoey/cfnew（官方直连池、地区反代域名、优选域名表）、cmliu/edgetunnel（机房级反代、CF-CIDR 运营商分段）、BPB（NAT64 前缀）。全部可在「高级设置」中关闭或替换为自己的地址。</p></details>
+        <details><summary>Kill Switch 是什么？</summary>
+          <p>开启后 Worker 会拒绝所有代理连接（返回 503），仅保留面板访问，用于紧急止损。</p></details>
+        <details><summary>自动更新怎么配置？</summary>
+          <p>填写 GitHub 仓库（需包含 version 文件与 dist/_worker.js）、Cloudflare 账户 ID、API Token 与 Worker 名称，然后开启自动更新。Cron 会定时检查并调用 Cloudflare API 重新部署。</p></details>
+        <details><summary>Pages 部署需要注意什么？</summary>
+          <p>Pages 需要在项目设置的「Functions → KV 命名空间绑定」中添加变量名 <code>CF_SUB_KV</code>。Pages 不支持 Cron，自动更新需手动点击部署。</p></details>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="savebar" id="savebar" style="display:none">
+  <button class="btn gh" onclick="loadAll()">刷新</button>
+  <button class="btn" id="saveBtn" onclick="save()">保存全部</button>
+</div>
+<div class="toast" id="toast"></div>
+
+<!-- 用户表单弹窗 -->
+<div class="modal" id="userModal">
+  <div class="box">
+    <h3 id="userModalTitle">新增用户</h3>
+    <input type="hidden" id="uf-id">
+    <label class="f">用户名 *</label><input id="uf-name" placeholder="例如 alice">
+    <label class="f">备注</label><input id="uf-notes">
+    <div class="row">
+      <div><label class="f">总流量上限（GB，留空不限）</label><input id="uf-total" type="number" placeholder="0"></div>
+      <div><label class="f">每日上限（GB，留空不限）</label><input id="uf-daily" type="number" placeholder="0"></div>
+    </div>
+    <div class="row">
+      <div><label class="f">有效天数（留空永久）</label><input id="uf-days" type="number" placeholder="0"></div>
+      <div><label class="f">并发连接上限</label><input id="uf-conn" type="number" placeholder="留空不限"></div>
+    </div>
+    <div class="row">
+      <div><label class="f">专属 ProxyIP</label><input id="uf-proxyIp"></div>
+      <div><label class="f">专属 Clean IP</label><input id="uf-cleanIp"></div>
+    </div>
+    <div class="row">
+      <div><label class="f">专属端口</label><input id="uf-ports" placeholder="443,2053"></div>
+      <div><label class="f">专属协议</label>
+        <select id="uf-mode"><option value="">（跟随全局）</option><option value="vless">VLESS</option><option value="trojan">Trojan</option><option value="xhttp">XHTTP</option></select>
+      </div>
+    </div>
+    <div class="row" style="margin-top:18px">
+      <button class="btn" onclick="submitUserForm()">保存</button>
+      <button class="btn gh" onclick="closeUserForm()">取消</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ==================== 全局状态 ==================== */
+const $ = (s) => document.querySelector(s);
+const $$ = (s) => Array.from(document.querySelectorAll(s));
+let CFG = null;         // 服务端配置
+let USERS = [];         // 用户列表
+let SESSION = null;     // { key, expiry }
+let DIRTY = false;
+
+const PORTS = [443,2053,2083,2087,2096,8443,80,8080,8880,2052,2082,2086,2095];
+
+/* ==================== 工具 ==================== */
+function toast(msg, kind){
+  const el = document.createElement('div');
+  el.className = kind || '';
+  el.textContent = msg;
+  $('#toast').appendChild(el);
+  setTimeout(()=>el.remove(), 3200);
+}
+function fmtBytes(n){
+  n = Number(n)||0;
+  if(n<1024) return n+' B';
+  if(n<1048576) return (n/1024).toFixed(2)+' KB';
+  if(n<1073741824) return (n/1048576).toFixed(2)+' MB';
+  return (n/1073741824).toFixed(2)+' GB';
+}
+function base(){ return location.origin + '/' + (CFG?.apiRoute || 'sub'); }
+function route(){ return CFG?.apiRoute || 'sub'; }
+
+async function api(name, body, method){
+  const url = base() + '/api/' + name;
+  const opt = { method: method || (body ? 'POST' : 'GET') };
+  if(body){ opt.headers = {'content-type':'application/json'}; opt.body = JSON.stringify(Object.assign({key: SESSION.key}, body)); }
+  else { opt.headers = {'authorization':'Bearer ' + SESSION.key}; }
+  const r = await fetch(url, opt);
+  return await r.json();
+}
+
+/* ==================== 登录 ==================== */
+async function doLogin(silent){
+  const key = SESSION?.key || $('#pwd').value.trim();
+  if(!key){ $('#loginErr').textContent = '请输入密钥'; return; }
+  try{
+    const r = await fetch(base()+'/api/auth', {
+      method:'POST', headers:{'content-type':'application/json'},
+      body: JSON.stringify({key})
+    });
+    const j = await r.json();
+    if(!j.success){
+      if(!silent) $('#loginErr').textContent = '密钥错误';
+      SESSION = null; localStorage.removeItem('cfsub_session');
+      return;
+    }
+    CFG = j.config;
+    window.__locked = j.locked || [];
+    window.__authNetwork = j.network || {};
+    SESSION = { key, expiry: Date.now()+30*60*1000 };
+    localStorage.setItem('cfsub_session', JSON.stringify(SESSION));
+    $('#login').style.display='none';
+    $('#app').style.display='block';
+    $('#savebar').style.display='flex';
+    $('#ver').textContent = 'v' + (j.version||'');
+    fillForm();
+    await loadAll();
+  }catch(e){
+    if(!silent) $('#loginErr').textContent = '连接失败：'+e.message;
+  }
+}
+
+function tryRestore(){
+  const s = localStorage.getItem('cfsub_session');
+  if(!s) return false;
+  try{
+    const j = JSON.parse(s);
+    if(j.expiry && j.expiry < Date.now()){ localStorage.removeItem('cfsub_session'); return false; }
+    SESSION = j; return true;
+  }catch{ return false; }
+}
+
+/* ==================== 数据加载 ==================== */
+async function loadAll(){
+  await Promise.all([loadStats(), loadUsers(), loadLogs(), loadNet()]);
+  renderOverview(); renderProfiles(); renderUsers(); checkUpdate();
+}
+
+async function loadStats(){
+  try{ const j = await api('stats'); if(j.success) window.__stats = j.stats; }catch(e){}
+}
+async function loadUsers(){
+  try{ const j = await api('users'); if(j.success) USERS = j.users || []; }catch(e){}
+}
+async function loadLogs(){
+  try{ const j = await api('logs',{}); if(j.success) window.__logs = j.logs || []; renderLogs(); }catch(e){}
+}
+async function loadNet(){
+  // 网络信息来自登录接口返回的 request.cf，避免浏览器跨域请求被拦截
+  window.__net = window.__authNetwork || { ip:'-', colo:'-' };
+  renderNet();
+}
+
+/* ==================== 表单填充 / 收集 ==================== */
+function fillForm(){
+  $$('[data-cfg]').forEach(el=>{
+    const k = el.dataset.cfg;
+    let v = CFG[k];
+    if(el.type==='checkbox'){ el.checked = !!v; }
+    else el.value = (v===undefined||v===null) ? '' : v;
+  });
+  // 布尔复选框（id 前缀 chk-）
+  [['isPaused','#chk-isPaused'],['ech','#chk-ech'],['enableEarlyData','#chk-enableEarlyData'],
+   ['allowInsecure','#chk-allowInsecure'],['autoUpdate','#chk-autoUpdate'],
+   ['enableOfficialIp','#chk-enableOfficialIp'],['enablePreferredDomain','#chk-enablePreferredDomain'],
+   ['enablePreferredIp','#chk-enablePreferredIp'],['enableRemotePreferred','#chk-enableRemotePreferred']
+  ].forEach(([k,sel])=>{ const el=$(sel); if(el) el.checked = !!CFG[k]; });
+  renderPortPicker();
+  markClean();
+}
+
+function collectForm(){
+  const out = Object.assign({}, CFG);
+  $$('[data-cfg]').forEach(el=>{
+    const k = el.dataset.cfg;
+    if(el.type==='checkbox') out[k] = el.checked;
+    else if(el.type==='number') out[k] = el.value==='' ? 0 : Number(el.value);
+    else out[k] = el.value;
+  });
+  [['isPaused','#chk-isPaused'],['ech','#chk-ech'],['enableEarlyData','#chk-enableEarlyData'],
+   ['allowInsecure','#chk-allowInsecure'],['autoUpdate','#chk-autoUpdate'],
+   ['enableOfficialIp','#chk-enableOfficialIp'],['enablePreferredDomain','#chk-enablePreferredDomain'],
+   ['enablePreferredIp','#chk-enablePreferredIp'],['enableRemotePreferred','#chk-enableRemotePreferred']
+  ].forEach(([k,sel])=>{ const el=$(sel); if(el) out[k] = el.checked; });
+  if(out.ports === undefined || !String(out.ports).length) out.ports = '443';
+  delete out.logs;
+  return out;
+}
+
+function renderPortPicker(){
+  const box = $('#portPicker'); if(!box) return;
+  const cur = String(CFG.ports||'443').split(',').map(s=>s.trim()).filter(Boolean);
+  box.innerHTML = PORTS.map(p=>
+    '<label class="chk" style="flex:0 0 auto;min-width:0"><input type="checkbox" class="portcb" value="'+p+'"'+(cur.includes(String(p))?' checked':'')+' onchange="markDirty()"><span>'+p+'</span></label>'
+  ).join('');
+}
+function readPorts(){
+  return $$('.portcb').filter(e=>e.checked).map(e=>e.value).join(',');
+}
+
+function markDirty(){
+  DIRTY = true;
+  $('#saveBtn').classList.add('dirty');
+  $('#saveBtn').textContent = '保存全部 ●';
+}
+function markClean(){
+  DIRTY = false;
+  $('#saveBtn').classList.remove('dirty');
+  $('#saveBtn').textContent = '保存全部';
+}
+
+async function save(){
+  const cfg = collectForm();
+  cfg.ports = readPorts();
+  try{
+    const j = await api('sync', {config: cfg});
+    if(j.success){
+      CFG = Object.assign(CFG, cfg);
+      if(j.newRoute && j.newRoute !== route()){
+        toast('面板路径已改为 /'+j.newRoute+'，即将跳转', 'ok');
+        setTimeout(()=>{ location.href = location.origin + '/' + j.newRoute + '/dash'; }, 1500);
+        return;
+      }
+      markClean();
+      toast('配置已保存', 'ok');
+      await loadAll();
+    } else toast(j.message || '保存失败', 'err');
+  }catch(e){ toast('保存失败：'+e.message, 'err'); }
+}
+
+function regenUuid(){
+  if(!confirm('重新生成 UUID 后，所有已导入的旧节点都会失效，确定继续？')) return;
+  const a = new Uint8Array(16);
+  crypto.getRandomValues(a);
+  a[6] = (a[6] & 0x0f) | 0x40;
+  a[8] = (a[8] & 0x3f) | 0x80;
+  const h = Array.from(a).map(b=>b.toString(16).padStart(2,'0')).join('');
+  $('#cfg-uuid').value = h.slice(0,8)+'-'+h.slice(8,12)+'-'+h.slice(12,16)+'-'+h.slice(16,20)+'-'+h.slice(20);
+  markDirty();
+  toast('已生成新 UUID，记得点「保存全部」','ok');
+}
+
+async function changeMasterKey(){
+  const v = $('#newMasterKey').value.trim();
+  if(!v){ toast('请输入新密钥', 'err'); return; }
+  const cfg = collectForm(); cfg.ports = readPorts(); cfg.masterKey = v;
+  const j = await api('sync', {config: cfg});
+  if(j.success){
+    CFG.masterKey = v; SESSION.key = v;
+    localStorage.setItem('cfsub_session', JSON.stringify(SESSION));
+    $('#newMasterKey').value = '';
+    toast('主密钥已更新', 'ok');
+  } else toast(j.message||'失败','err');
+}
+
+/* ==================== 渲染 ==================== */
+function tab(name){
+  $$('.nav button').forEach(b=>b.classList.toggle('on', b.dataset.tab===name));
+  $$('.view').forEach(v=>v.classList.add('hide'));
+  const el = $('#v-'+name); if(el) el.classList.remove('hide');
+  if(name==='users') renderUsers();
+  if(name==='logs') renderLogs();
+}
+
+function renderOverview(){
+  const locked = window.__locked || [];
+  $('#lockedBanner').innerHTML = locked.length
+    ? '<div class="banner">🔒 以下配置由 <b>环境变量</b> 锁定，面板中修改不会生效（优先级：环境变量 &gt; 面板配置）：'
+      + locked.map(k=>'<span class="tag mut">'+k+'</span>').join(' ') + '</div>'
+    : '';
+  const s = window.__stats || {users:{total:0,active:0,paused:0,expired:0,disabled:0},traffic:{totalText:'0 B',dailyText:'0 B'},system:{}};
+  $('#statCards').innerHTML = [
+    ['用户总数', s.users.total], ['活跃', s.users.active], ['暂停', s.users.paused],
+    ['超限/过期', (s.users.disabled||0)+(s.users.expired||0)],
+    ['总流量', s.traffic.totalText], ['今日流量', s.traffic.dailyText],
+    ['运行模式', (CFG.mode||'vless').toUpperCase()], ['节点端口', CFG.ports||'443']
+  ].map(([k,v])=>'<div class="stat"><div class="k">'+k+'</div><div class="v">'+v+'</div></div>').join('');
+
+  const sys = s.system||{};
+  $('#sysInfo').innerHTML =
+    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;font-size:13px">'+
+    row('版本', sys.version||'-') + row('KV 绑定', sys.hasKV ? '✅ 正常' : '❌ 缺失') +
+    row('Kill Switch', CFG.isPaused ? '🛑 已开启' : '关闭') +
+    row('协议', (CFG.mode||'vless')) + row('UUID', (CFG.uuid||'-').slice(0,8)+'…') +
+    row('面板路径', '/'+route()+'/dash') + row('反代模式', CFG.proxyIpMode||'auto') +
+    row('出站方式', CFG.outboundMode||'auto') +
+    '</div>';
+
+  const logs = (window.__logs||[]).slice(0,8);
+  $('#recentLogs').innerHTML = logs.length ? logs.map(l=>logLine(l)).join('') : '<div class="hint">暂无日志</div>';
+}
+function row(k,v){ return '<div><span style="color:var(--mut)">'+k+'：</span>'+v+'</div>'; }
+function logLine(l){
+  return '<div class="logline"><span class="t">'+l.ts.replace('T',' ').slice(0,19)+'</span><span>'+l.type+'</span><span style="color:var(--mut)">'+l.detail+'</span></div>';
+}
+
+function renderProfiles(){
+  const list = [{id:'default', name: CFG.name||'默认'}].concat((CFG.users||[]).filter(u=>u.status!=='paused'));
+  $('#profiles').innerHTML = list.map(p=>{
+    const q = '?sub=' + encodeURIComponent(p.name);
+    const links = [
+      ['通用（自动识别）', base()+q],
+      ['Clash / Mihomo', base()+q+'&flag=clash'],
+      ['Sing-box', base()+q+'&flag=singbox'],
+      ['v2rayN JSON', base()+q+'&flag=v2ray'],
+      ['Base64 明文', base()+q+'&flag=base64']
+    ];
+    return '<div class="card"><h3 class="sec" style="margin-top:0">👤 '+p.name+'</h3>'+
+      links.map(([t,u])=>'<div class="linkbox"><input readonly value="'+u+'"><button class="btn gh sm" onclick="copyUrl(this.previousElementSibling)">复制</button><button class="btn gh sm" onclick="showQr(\''+u+'\')">二维码</button></div>').join('')+
+      '<div class="row" style="margin-top:10px"><button class="btn gh sm" onclick="openClient(\'clash\',\''+base()+q+'&flag=clash\')">导入 Clash</button>'+
+      '<button class="btn gh sm" onclick="openClient(\'sing-box\',\''+base()+q+'&flag=singbox\')">导入 Sing-box</button></div></div>';
+  }).join('');
+}
+
+function showQr(u){
+  const w = window.open('', '_blank', 'width=320,height=380');
+  w.document.write('<body style="background:#0b1120;color:#fff;font-family:sans-serif;display:flex;flex-direction:column;align-items:center;padding:20px">'+
+    '<h3 style="font-size:15px">扫描导入</h3><img style="width:240px;height:240px;background:#fff;padding:8px;border-radius:12px" src="https://api.qrserver.com/v1/create-qr-code/?size=240x240&data='+encodeURIComponent(u)+'">'+
+    '<p style="font-size:11px;word-break:break-all;max-width:280px;color:#94a3b8">'+u+'</p></body>');
+}
+function copyUrl(el){ el.select(); if(navigator.clipboard) navigator.clipboard.writeText(el.value); toast('已复制','ok'); }
+function openClient(kind, url){ location.href = kind + '://install-config?url=' + encodeURIComponent(url); }
+
+function renderUsers(){
+  const q = ($('#userSearch')?.value||'').toLowerCase();
+  const list = USERS.filter(u=>!q || (u.name+' '+u.id+' '+(u.notes||'')).toLowerCase().includes(q));
+  const st = {total:USERS.length, active:0, paused:0, expired:0, disabled:0};
+  USERS.forEach(u=>{ st[u.status] = (st[u.status]||0)+1; });
+  $('#userStat').innerHTML = [
+    ['用户总数', st.total], ['活跃', st.active||0], ['暂停', st.paused||0], ['超限/过期', (st.disabled||0)+(st.expired||0)]
+  ].map(([k,v])=>'<div class="stat"><div class="k">'+k+'</div><div class="v">'+v+'</div></div>').join('');
+
+  $('#userTable').innerHTML = list.length ? list.map(u=>{
+    const uu = u.usage||{};
+    const tag = u.status==='active' ? '<span class="tag ok">正常</span>'
+      : u.status==='paused' ? '<span class="tag mut">暂停</span>'
+      : u.status==='expired' ? '<span class="tag warn">过期</span>' : '<span class="tag err">超限</span>';
+    return '<tr>'+
+      '<td><b>'+u.name+'</b><div class="hint mono">'+u.id.slice(0,8)+' · '+(u.uuid||'').slice(0,8)+'…</div></td>'+
+      '<td>'+tag+'</td>'+
+      '<td>'+(uu.totalText||'0 B')+' / '+(uu.limitText||'不限')+'<div class="bar"><i style="width:'+(uu.progress||0)+'%"></i></div></td>'+
+      '<td>'+(uu.dailyText||'0 B')+'</td>'+
+      '<td>'+(u.expiryMs ? new Date(u.expiryMs).toLocaleDateString('zh-CN') : '永久')+'</td>'+
+      '<td>'+(u.connLimit||'不限')+'</td>'+
+      '<td><button class="btn gh sm" onclick="copySub(\''+u.name+'\')">链接</button> '+
+      '<button class="btn gh sm" onclick="editUser(\''+u.id+'\')">编辑</button> '+
+      '<button class="btn gh sm" onclick="toggleUser(\''+u.id+'\')">'+(u.status==='active'?'暂停':'启用')+'</button> '+
+      '<button class="btn gh sm" onclick="resetUser(\''+u.id+'\')">重置</button> '+
+      '<button class="btn dg sm" onclick="delUser(\''+u.id+'\')">删除</button></td></tr>';
+  }).join('') : '<tr><td colspan="7" style="text-align:center;color:var(--mut);padding:24px">暂无用户，点击「新增用户」创建</td></tr>';
+}
+
+function renderLogs(){
+  const logs = window.__logs||[];
+  $('#logList').innerHTML = logs.length ? logs.map(logLine).join('') : '<div class="hint">暂无日志</div>';
+}
+
+function renderNet(){
+  const n = window.__net||{};
+  $('#netInfo').innerHTML = '<div style="display:grid;gap:6px;font-size:13px">'+
+    row('出口 IP', n.ip||'-') + row('CF 机房', n.colo||'-') +
+    row('地区', n.loc||'-') +
+    row('反代模式', CFG.proxyIpMode||'auto') + row('出站方式', CFG.outboundMode||'auto') +
+    row('自定义反代', CFG.customProxyIp||'（未设置）') +
+    row('时间', new Date().toLocaleString('zh-CN')) + '</div>';
+}
+
+/* ==================== 用户操作 ==================== */
+function openUserForm(){ $('#uf-id').value=''; $('#userModalTitle').textContent='新增用户';
+  ['#uf-name','#uf-notes','#uf-total','#uf-daily','#uf-days','#uf-conn','#uf-proxyIp','#uf-cleanIp','#uf-ports'].forEach(s=>$(s).value='');
+  $('#uf-mode').value=''; $('#userModal').classList.add('on'); }
+function closeUserForm(){ $('#userModal').classList.remove('on'); }
+
+function editUser(id){
+  const u = USERS.find(x=>x.id===id); if(!u) return;
+  $('#uf-id').value = u.id; $('#userModalTitle').textContent='编辑用户 · '+u.name;
+  $('#uf-name').value = u.name||''; $('#uf-notes').value = u.notes||'';
+  $('#uf-total').value = u.limitTotalGb||''; $('#uf-daily').value = u.limitDailyGb||'';
+  $('#uf-days').value = u.expiryMs ? Math.max(1, Math.round((u.expiryMs-Date.now())/86400000)) : '';
+  $('#uf-conn').value = u.connLimit||''; $('#uf-proxyIp').value = u.proxyIp||'';
+  $('#uf-cleanIp').value = u.cleanIp||''; $('#uf-ports').value = u.ports||''; $('#uf-mode').value = u.mode||'';
+  $('#userModal').classList.add('on');
+}
+
+async function submitUserForm(){
+  const id = $('#uf-id').value;
+  const body = {
+    name: $('#uf-name').value.trim(),
+    notes: $('#uf-notes').value,
+    limitTotalGb: $('#uf-total').value || 0,
+    limitDailyGb: $('#uf-daily').value || 0,
+    expiryDays: $('#uf-days').value || 0,
+    connLimit: $('#uf-conn').value || 0,
+    maxConfigs: 0,
+    proxyIp: $('#uf-proxyIp').value,
+    cleanIp: $('#uf-cleanIp').value,
+    ports: $('#uf-ports').value,
+    mode: $('#uf-mode').value
+  };
+  if(!body.name){ toast('请填写用户名','err'); return; }
+  try{
+    let j;
+    if(id) j = await api('users?id='+id, body, 'PUT');
+    else j = await api('users', body, 'POST');
+    if(j.success){ toast(id?'已更新':'已创建','ok'); closeUserForm(); await loadUsers(); renderUsers(); }
+    else toast(j.message||'操作失败','err');
+  }catch(e){ toast('操作失败：'+e.message,'err'); }
+}
+
+async function toggleUser(id){
+  const j = await api('users?id='+id+'&action=toggle', {}, 'POST');
+  if(j.success){ toast('已切换状态','ok'); await loadUsers(); renderUsers(); }
+}
+async function resetUser(id){
+  if(!confirm('确定清零该用户流量统计？')) return;
+  const j = await api('users?id='+id+'&action=reset', {}, 'POST');
+  if(j.success){ toast('已重置','ok'); await loadUsers(); renderUsers(); }
+}
+async function delUser(id){
+  if(!confirm('确定删除该用户？此操作不可恢复')) return;
+  const j = await api('users?id='+id, null, 'DELETE');
+  if(j.success){ toast('已删除','ok'); await loadUsers(); renderUsers(); }
+}
+function copySub(name){
+  const u = location.origin + '/' + route() + '?sub=' + encodeURIComponent(name);
+  if(navigator.clipboard) navigator.clipboard.writeText(u);
+  toast('订阅链接已复制','ok');
+}
+
+/* ==================== 网络工具 ==================== */
+async function runPing(){
+  const t = $('#pingTarget').value.trim();
+  if(!t){ toast('请输入目标','err'); return; }
+  $('#pingResult').textContent = '测试中…';
+  const j = await api('tools', {op:'ping', target:t});
+  $('#pingResult').textContent = j.success ? ('延迟 '+j.ms+' ms'+(j.colo?(' · 机房 '+j.colo):'')) : '测试失败';
+}
+async function smartClean(){
+  $('#cleanResult').textContent = '解析中…';
+  const j = await api('tools', {op:'smart-clean-ip'});
+  if(j.success && j.ips){
+    $('#cfg-cleanIps').value = j.ips;
+    markDirty();
+    $('#cleanResult').textContent = '已解析 '+j.ips.split(',').length+' 个 IP，记得点「保存全部」';
+  } else $('#cleanResult').textContent = '解析失败';
+}
+async function previewPreferred(){
+  $('#cleanResult').textContent = '获取中…';
+  const j = await api('tools', {op:'preview-preferred'});
+  if(j.success){
+    $('#cleanResult').textContent = (j.list||[]).slice(0,20).map(x=>x.ip+':'+x.port+(x.name?(' ('+x.name+')'):'')).join('  ');
+  } else $('#cleanResult').textContent = '获取失败';
+}
+
+/* ==================== 更新 ==================== */
+async function checkUpdate(){
+  if(!CFG.githubRepo){ $('#updateBanner').innerHTML=''; return; }
+  try{
+    const j = await api('update', {action:'check'});
+    if(!j.success) return;
+    window.__upd = j;
+    if(j.updateAvailable){
+      $('#updateBanner').innerHTML = '<div class="banner">🎉 发现新版本 <b>'+j.latest+'</b>（当前 '+j.current+'）'+
+        (j.canDeploy ? '<button class="btn sm" onclick="doUpdate(false)">立即更新</button>' : '<span class="hint">请先在下方填写 Cloudflare 凭据</span>')+'</div>';
+    } else $('#updateBanner').innerHTML = '';
+    $('#updateResult').textContent = '当前 '+j.current+' · 最新 '+j.latest+(j.canDeploy?' · 凭据已配置':' · 凭据未配置');
+  }catch(e){}
+}
+async function doUpdate(force){
+  if(force && !confirm('强制覆盖部署会用 GitHub 上的代码替换当前 Worker，确定继续？')) return;
+  $('#updateResult').textContent = '部署中…';
+  const j = await api('update', {action:'deploy', force: !!force});
+  if(j.success){ toast('已部署：'+j.message,'ok'); $('#updateResult').textContent = j.message; }
+  else { toast(j.message||'部署失败','err'); $('#updateResult').textContent = j.message||'部署失败'; }
+}
+
+/* ==================== 事件绑定 ==================== */
+document.addEventListener('DOMContentLoaded', ()=>{
+  if(tryRestore()) doLogin(true);
+  document.addEventListener('keydown', (e)=>{
+    if((e.ctrlKey||e.metaKey) && e.key==='s'){ e.preventDefault(); if(CFG) save(); }
+    if(e.key==='Enter' && $('#login').style.display!=='none') doLogin();
+  });
+  document.addEventListener('input', (e)=>{
+    if(e.target.dataset && e.target.dataset.cfg) markDirty();
+    if(e.target.id && e.target.id.startsWith('chk-')) markDirty();
+  });
+  document.addEventListener('change', (e)=>{
+    if(e.target.dataset && e.target.dataset.cfg) markDirty();
+    if(e.target.id && e.target.id.startsWith('chk-')) markDirty();
+  });
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,1 @@
+export const DASHBOARD_HTML = __DASHBOARD_HTML__;

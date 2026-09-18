@@ -1,0 +1,9 @@
+node_modules/
+.wrangler/
+.dev.vars
+*.log
+.env
+
+# dist/_worker.js 需要提交到仓库：面板的「GitHub 自动更新」会从仓库拉取它重新部署
+dist/*
+!dist/_worker.js

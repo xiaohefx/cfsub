@@ -1,0 +1,16 @@
+{
+  "name": "cfsub",
+  "version": "1.0.0",
+  "private": true,
+  "description": "CFSub - Cloudflare 订阅管理面板：多用户 / 流量限制 / 多协议订阅 / 内置优选 IP / GitHub 自动更新",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.js",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "wrangler": "^4.0.0"
+  }
+}
