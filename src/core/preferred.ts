@@ -1,4 +1,5 @@
-import { safeFetch, toLines, toArray, parseHostPort, isIPv4, shuffle } from '../utils.ts';
+import { safeFetch, toLines, toArray, parseHostPort, isIPv4, shuffle, md5HexOrNull } from '../utils.ts';
+import { dohResolve } from './dns.ts';
 import {
   BUILTIN_PREFERRED_SOURCES,
   PREFERRED_DOMAINS,
@@ -6,8 +7,33 @@ import {
   ISP_LABELS,
   TLS_PORTS,
   NAT64_PREFIXES,
+  OFFICIAL_DIRECT_IPS,
+  CF_IPV4_RANGES,
+  ONLINE_PREFERRED_API,
+  ONLINE_API_SEED,
+  ONLINE_API_SALT,
+  ONLINE_ISP_GROUPS,
 } from '../config/resources.ts';
-import { dohResolve } from './dns.ts';
+
+/* ---------------------- Cloudflare 官方网段校验 ---------------------- */
+
+function ipv4ToInt(ip) {
+  const p = ip.split('.').map(Number);
+  return (((p[0] << 24) | (p[1] << 16) | (p[2] << 8) | p[3]) >>> 0);
+}
+
+const CF_RANGE_TABLE = CF_IPV4_RANGES.map((cidr) => {
+  const [base, len] = cidr.split('/');
+  const mask = (0xffffffff << (32 - Number(len))) >>> 0;
+  return { net: ipv4ToInt(base) & mask, mask };
+});
+
+/** 判断 IPv4 是否属于 Cloudflare 官方网段 */
+export function isCloudflareIpv4(ip) {
+  if (!isIPv4(ip)) return false;
+  const n = ipv4ToInt(ip);
+  return CF_RANGE_TABLE.some((r) => (n & r.mask) === r.net);
+}
 
 /* --------------------------- CIDR → 随机 IP --------------------------- */
 
@@ -23,10 +49,59 @@ function randomIpFromCidr(cidr) {
   return [(ip >>> 24) & 0xff, (ip >>> 16) & 0xff, (ip >>> 8) & 0xff, ip & 0xff].join('.');
 }
 
+/* --------------------- 在线优选接口（cfnew 方案） --------------------- */
+
+const onlineCache = { at: 0, val: [] };
+const ONLINE_TTL = 5 * 60 * 1000;
+
+/**
+ * 从 cfnew 使用的在线接口拉取实测可用的 Cloudflare 优选 IP。
+ * 返回 [{ ip, port, name, isp }]
+ */
+export async function fetchOnlinePreferred(cfg) {
+  if (onlineCache.val.length && Date.now() - onlineCache.at < ONLINE_TTL) return onlineCache.val;
+  try {
+    const ts = String(Date.now());
+    const inner = await md5HexOrNull(ONLINE_API_SEED);
+    if (!inner) return onlineCache.val; // 运行时不支持 MD5，跳过在线接口
+    const key = await md5HexOrNull(inner + ONLINE_API_SALT + ts);
+    if (!key) return onlineCache.val;
+    const res = await safeFetch(`${ONLINE_PREFERRED_API}?key=${key}&time=${ts}`, {
+      headers: { 'User-Agent': 'Mozilla/5.0', accept: 'application/json' },
+    }, 8000);
+    if (!res || !res.ok) return onlineCache.val;
+
+    const j = await res.json();
+    const data = j && j.data;
+    if (!data) return onlineCache.val;
+
+    const wantV6 = cfg?.enablePreferredIPv6 === true;
+    const out = [];
+    for (const [group, label] of Object.entries(ONLINE_ISP_GROUPS)) {
+      const isV6 = group === 'ipv6';
+      if (isV6 && !wantV6) continue;
+      const info = data[group] && Array.isArray(data[group].info) ? data[group].info : [];
+      for (const item of info) {
+        const ip = String(item?.ip || '').trim();
+        if (!ip) continue;
+        if (!isV6 && !isCloudflareIpv4(ip)) continue; // 兜底：确保是 Cloudflare 地址
+        out.push({ ip, port: 443, name: `${label}优选`, isp: group });
+      }
+    }
+    if (out.length) {
+      onlineCache.at = Date.now();
+      onlineCache.val = out;
+    }
+    return out;
+  } catch {
+    return onlineCache.val;
+  }
+}
+
 /* --------------------------- 远程优选源 --------------------------- */
 
 const sourceCache = new Map();
-const SOURCE_TTL = 10 * 60 * 1000; // 10 分钟
+const SOURCE_TTL = 10 * 60 * 1000;
 
 async function fetchSource(url) {
   const hit = sourceCache.get(url);
@@ -56,12 +131,15 @@ function parseEntry(line, defaultPort = 443) {
 /**
  * 汇总所有优选 IP。
  * 返回 [{ ip, port, name }]
+ *
+ * 优先级：自定义 > Clean IP > 在线实测接口 > CIDR 随机（过白名单）> 内置官方直连池
  */
 export async function collectPreferredIps(cfg, limit = 12) {
   const out = [];
   const seen = new Set();
   const push = (e) => {
     if (!e || !e.ip) return;
+    if (isIPv4(e.ip) && !isCloudflareIpv4(e.ip)) return; // 丢弃非 Cloudflare 的 IPv4
     const k = `${e.ip}:${e.port}`;
     if (seen.has(k)) return;
     seen.add(k);
@@ -78,47 +156,54 @@ export async function collectPreferredIps(cfg, limit = 12) {
     for (const ip of toArray(cfg.cleanIps)) push({ ip, port: 443, name: 'CleanIP' });
   }
 
-  // 3. 远程优选源
-  if (cfg.enableRemotePreferred !== false) {
-    const urls = [
-      ...toArray(cfg.preferredUrls),
-      ...(cfg.enablePreferredIp !== false ? BUILTIN_PREFERRED_SOURCES.map((s) => s.url) : []),
-    ];
-    const results = await Promise.allSettled(urls.slice(0, 6).map(fetchSource));
-    let idx = 0;
-    for (const r of results) {
-      if (r.status !== 'fulfilled') continue;
-      const src = BUILTIN_PREFERRED_SOURCES.find((s) => s.url === urls[idx]);
-      const label = src ? `${ISP_LABELS[src.isp] || ''}优选` : '优选';
-      const lines = shuffle(r.value).slice(0, Math.max(2, Math.ceil(limit / Math.max(1, urls.length))));
-      for (const line of lines) {
-        // CIDR 段 → 随机 IP
-        if (line.includes('/')) {
-          const ip = randomIpFromCidr(line);
-          if (ip) push({ ip, port: 443, name: `${label}${out.length + 1}` });
-        } else {
-          const e = parseEntry(line);
-          if (e) push({ ...e, name: e.name || `${label}${out.length + 1}` });
-        }
-      }
-      idx++;
-    }
+  // 3. 在线实测优选接口（cfnew 方案，返回真实可用的 Cloudflare IP）
+  if (cfg.enablePreferredIp !== false) {
+    const online = await fetchOnlinePreferred(cfg);
+    for (const e of shuffle(online).slice(0, Math.max(4, limit))) push(e);
   }
 
-  // 4. 内置兜底：从默认 CIDR 生成
+  // 4. 远程 CIDR 源（结果需过 Cloudflare 白名单，非 Cloudflare 段直接丢弃）
+  if (out.length < limit && cfg.enableRemotePreferred !== false) {
+    const urls = [...toArray(cfg.preferredUrls), ...BUILTIN_PREFERRED_SOURCES.map((s) => s.url)];
+    const results = await Promise.allSettled(urls.slice(0, 4).map(fetchSource));
+    results.forEach((r, i) => {
+      if (r.status !== 'fulfilled' || out.length >= limit) return;
+      const src = BUILTIN_PREFERRED_SOURCES.find((s) => s.url === urls[i]);
+      const label = src ? `${ISP_LABELS[src.isp] || ''}优选` : '优选';
+      for (const line of shuffle(r.value).slice(0, Math.ceil(limit / 2))) {
+        if (out.length >= limit) break;
+        if (line.includes('/')) {
+          const ip = randomIpFromCidr(line);
+          if (ip) push({ ip, port: 443, name: label });
+        } else {
+          const e = parseEntry(line);
+          if (e) push({ ...e, name: e.name || label });
+        }
+      }
+    });
+  }
+
+  // 5. 兜底：内置官方直连地址池（cfnew 官方直连，10 个真实 Cloudflare 边缘 IP）
+  if (!out.length) {
+    for (const ip of shuffle(OFFICIAL_DIRECT_IPS)) push({ ip, port: 443, name: '官方直连' });
+  }
+  // 6. 最后兜底：从默认 CIDR 生成（仍要过白名单）
   if (!out.length) {
     for (let i = 0; i < Math.min(limit, 8); i++) {
       const ip = randomIpFromCidr(FALLBACK_CIDR[0]);
-      if (ip) push({ ip, port: 443, name: `官方优选${i + 1}` });
+      if (ip) push({ ip, port: 443, name: '官方优选' });
     }
   }
 
   return out.slice(0, Math.max(1, limit));
 }
 
-/**
- * 汇总优选反代域名（用于生成「地址 = 域名」的节点）
- */
+/** 官方直连地址池（供订阅与数据面共同使用） */
+export function officialDirectIps() {
+  return shuffle(OFFICIAL_DIRECT_IPS).map((ip) => ({ ip, port: 443, name: '官方直连' }));
+}
+
+/** 汇总优选反代域名（用于生成「地址 = 域名」的节点） */
 export async function collectPreferredDomains(cfg, limit = 6) {
   if (cfg.enablePreferredDomain === false) return [];
   return shuffle(PREFERRED_DOMAINS)
@@ -136,10 +221,11 @@ export async function resolveDomainIps(domains, dohUrl, limit = 6) {
   return out;
 }
 
+const SMART_DOMAINS_FALLBACK = PREFERRED_DOMAINS.slice(0, 8);
+
 /** 智能解析：把一批域名解析成可用 Clean IP（面板「⚡ 智能解析」按钮用） */
 export async function smartCleanIps(domains, dohUrl) {
   const list = domains && domains.length ? domains : SMART_DOMAINS_FALLBACK;
-  // 主 DoH 失败时依次回退，避免因单个解析服务不可达而整体失败
   const servers = [...new Set([dohUrl, 'https://dns.google/dns-query', 'https://223.5.5.5/dns-query', 'https://cloudflare-dns.com/dns-query'].filter(Boolean))];
   const out = new Set();
   await Promise.all(
@@ -156,8 +242,6 @@ export async function smartCleanIps(domains, dohUrl) {
   );
   return [...out].slice(0, 16).join(',');
 }
-
-const SMART_DOMAINS_FALLBACK = PREFERRED_DOMAINS.slice(0, 8);
 
 /** 端口解析：把逗号分隔的端口文本变成数组，并判定是否 TLS */
 export function parsePorts(portsText, defaultPorts = TLS_PORTS) {

@@ -198,16 +198,33 @@ export function today() {
   return new Date().toISOString().slice(0, 10);
 }
 
-/** 简易哈希（用于派生默认 UUID / 密码，不用于安全存储） */
-export async function md5Hex(str) {
+/** 运行环境的 MD5 支持探测结果（isolate 内缓存） */
+let md5Ok = null;
+
+/**
+ * 计算 MD5。用于签名等场景。
+ * 返回 null 表示当前运行时不支持 MD5——调用方应跳过依赖 MD5 的功能，
+ * 而不是用错误的值继续（否则签名必然失败且难以排查）。
+ */
+export async function md5HexOrNull(str) {
   const bytes = new TextEncoder().encode(str);
-  const buf = await crypto.subtle.digest('MD5', bytes).catch(() => null);
-  if (buf) {
+  if (md5Ok === false) return null;
+  try {
+    const buf = await crypto.subtle.digest('MD5', bytes);
+    md5Ok = true;
     return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
+  } catch {
+    md5Ok = false;
+    return null;
   }
-  // workerd 不支持 MD5 时退化为 FNV-1a
+}
+
+/** 派生用途的哈希（缺省时退化为 FNV-1a，只用于生成默认值，不用于签名） */
+export async function md5Hex(str) {
+  const real = await md5HexOrNull(str);
+  if (real) return real;
   let h = 0x811c9dc5;
-  for (const b of bytes) {
+  for (const b of new TextEncoder().encode(str)) {
     h ^= b;
     h = (h * 0x01000193) >>> 0;
   }

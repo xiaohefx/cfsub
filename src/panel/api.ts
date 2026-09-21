@@ -1,6 +1,7 @@
 import { loadConfig, saveConfig, loadUsage, getUsage, resetUsage, flushUsage, addLog, loadLogs, hasKV } from '../config/store.ts';
 import { newUserDefaults, CURRENT_VERSION } from '../config/defaults.ts';
-import { smartCleanIps, collectPreferredIps } from '../core/preferred.ts';
+import { smartCleanIps, collectPreferredIps, fetchOnlinePreferred, isCloudflareIpv4 } from '../core/preferred.ts';
+import { resolveProxyIps, normalizeProxy } from '../core/transport.ts';
 import { validateNameStrategy } from '../sub/build.ts';
 import { json, randomUUID, isUUID, deriveUUID, gbToBytes, safeFetch, formatBytes } from '../utils.ts';
 import { SMART_CLEAN_DOMAINS } from '../config/resources.ts';
@@ -340,7 +341,39 @@ export async function handleTools(req, url, body, env) {
 
   if (op === 'preview-preferred') {
     const list = await collectPreferredIps(cfg, 20);
-    return json({ success: true, list });
+    const online = await fetchOnlinePreferred(cfg);
+    return json({
+      success: true,
+      list,
+      stats: {
+        total: list.length,
+        onlineCount: online.length,
+        onlineOk: online.length > 0,
+        allCloudflare: list.filter((x) => isCloudflareIpv4(x.ip)).length,
+      },
+    });
+  }
+
+  // 预览当前反代设置会实际使用哪些地址（用于验证「指定地区」是否真的生效）
+  if (op === 'proxyip-preview') {
+    const colo = String(body?.colo || '');
+    const probe = { ...cfg };
+    if (body?.region) {
+      probe.proxyIpMode = 'region';
+      probe.proxyIpRegion = String(body.region).toUpperCase();
+    }
+    const list = resolveProxyIps(probe, colo);
+    const resolved = list.slice(0, 8).map((e) => {
+      const n = normalizeProxy(e, 443);
+      return `${n.host}:${n.port}`;
+    });
+    return json({
+      success: true,
+      mode: probe.proxyIpMode,
+      region: probe.proxyIpRegion || '',
+      colo,
+      list: resolved,
+    });
   }
 
   if (op === 'ping') {

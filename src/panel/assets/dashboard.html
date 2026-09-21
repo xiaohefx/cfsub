@@ -383,6 +383,12 @@ summary{cursor:pointer;color:var(--mut);font-size:13px;padding:6px 0}
           <div><label class="f">自定义 ProxyIP（支持 IP / 域名 / 带端口）</label><input id="cfg-customProxyIp" data-cfg="customProxyIp" placeholder="1.2.3.4:443 或 proxy.example.com:8443"></div>
           <div><label class="f">兜底反代</label><input id="cfg-backupProxyIp" data-cfg="backupProxyIp"></div>
         </div>
+        <div class="row" style="margin-top:10px">
+          <button class="btn gh" onclick="previewProxyIp()">🔍 查看当前反代会用到哪些地址</button>
+        </div>
+        <div class="hint" id="proxyPreview">
+          选择「指定地区」后点这里，可以看到实际会按顺序尝试的反代地址。该地址会写入订阅节点的 path（?wk= 或 ?proxyip=），服务端按节点解析。
+        </div>
         <div class="row">
           <div><label class="f">NAT64 前缀（留空关闭）</label><input id="cfg-nat64" data-cfg="nat64" placeholder="[2602:fc59:b0:64::]"></div>
           <div><label class="f">Clean IP（逗号分隔）</label><input id="cfg-cleanIps" data-cfg="cleanIps"></div>
@@ -886,8 +892,24 @@ async function previewPreferred(){
   $('#cleanResult').textContent = '获取中…';
   const j = await api('tools', {op:'preview-preferred'});
   if(j.success){
-    $('#cleanResult').textContent = (j.list||[]).slice(0,20).map(x=>x.ip+':'+x.port+(x.name?(' ('+x.name+')'):'')).join('  ');
+    const s = j.stats||{};
+    const src = s.onlineOk ? '在线实测接口 ✅' : '在线接口不可用，已回退内置地址池 ⚠️';
+    $('#cleanResult').innerHTML = '来源：'+src+' · 共 '+s.total+' 个（Cloudflare 校验通过 '+s.allCloudflare+' 个）<br>'
+      + (j.list||[]).slice(0,20).map(x=>x.ip+':'+x.port+(x.name?(' ('+x.name+')'):'')).join('　');
   } else $('#cleanResult').textContent = '获取失败';
+}
+
+async function previewProxyIp(){
+  const el = $('#proxyPreview');
+  el.textContent = '查询中…';
+  const region = ($('#cfg-proxyIpRegion')?.value || '').trim();
+  const j = await api('tools', {op:'proxyip-preview', region});
+  if(!j.success){ el.textContent = '查询失败'; return; }
+  const list = j.list || [];
+  el.innerHTML = '<b>模式：</b>'+j.mode+(j.region?(' · <b>地区：</b>'+j.region):'')+(j.colo?(' · <b>机房：</b>'+j.colo):'')
+    + '<br><b>实际反代地址（按顺序尝试）：</b><br>'
+    + (list.length ? list.map(x=>'<span class="tag mut">'+x+'</span>').join(' ') : '<span class="tag err">无（当前设置下不使用反代）</span>')
+    + '<br><span style="color:var(--mut)">保存后，选定地区的地址会以 ?wk= 或 ?proxyip= 形式写入订阅节点，服务端按节点解析生效。</span>';
 }
 
 /* ==================== 更新 ==================== */

@@ -26,8 +26,13 @@ export function resolveProxyIps(cfg, colo = '') {
 
   if (cfg.proxyIpMode === 'region' && cfg.proxyIpRegion) {
     // 指定地区：同地区 → 邻近地区 → 其他
+    // rm=no 时关闭智能匹配，只用该地区本身，不做邻近回退
     const want = String(cfg.proxyIpRegion).toUpperCase();
     const same = REGION_PROXYIPS.filter((p) => p.region.toUpperCase() === want);
+    if (cfg.rm === false) {
+      for (const p of same) out.push(`${p.domain}:443`);
+      return out;
+    }
     const near = (REGION_NEIGHBORS[want] || []).flatMap((r) =>
       REGION_PROXYIPS.filter((p) => p.region.toUpperCase() === r),
     );

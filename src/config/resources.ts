@@ -117,8 +117,49 @@ export const CMLIU_COLO_PROXY = 'proxyip.cmliussss.net';
 export const CMLIU_FALLBACK_PROXY = 'proxyip.tp1.090227.xyz';
 
 /* ------------------------------------------------------------------ *
- * 5. 远程优选 IP 源（cmliu CF-CIDR 运营商分段 + cfnew 在线接口）
- *    每行格式：IP:端口#备注  或  纯 IP
+ * 5a. 在线优选接口（来自 cfnew）
+ *     返回的是实测可用的真实 Cloudflare IP，按运营商分组，是首选数据源。
+ *     签名：key = MD5( MD5(API_SEED) + API_SALT + 毫秒时间戳 )
+ * ------------------------------------------------------------------ */
+export const ONLINE_PREFERRED_API = 'https://api.uouin.com/index.php/index/Cloudflare';
+export const ONLINE_API_SEED = 'DdlTxtN0sUOu';
+export const ONLINE_API_SALT = '70cloudflareapikey';
+/** 接口返回的分组 → 展示名。与 cfnew 保持一致。 */
+export const ONLINE_ISP_GROUPS = {
+  bgp: '多线',
+  ctcc: '电信',
+  cucc: '联通',
+  cmcc: '移动',
+  ipv6: 'IPv6',
+};
+
+/* ------------------------------------------------------------------ *
+ * 5b. Cloudflare 官方 IPv4 网段（https://www.cloudflare.com/ips-v4）
+ *     用于过滤 CIDR 随机生成的地址，避免把非 Cloudflare 的
+ *     互联段（如 188.164.248.0/24、8.35.211.0/24）当成节点地址。
+ * ------------------------------------------------------------------ */
+export const CF_IPV4_RANGES = [
+  '173.245.48.0/20',
+  '103.21.244.0/22',
+  '103.22.200.0/22',
+  '103.31.4.0/22',
+  '141.101.64.0/18',
+  '108.162.192.0/18',
+  '190.93.240.0/20',
+  '188.114.96.0/20',
+  '197.234.240.0/22',
+  '198.41.128.0/17',
+  '162.158.0.0/15',
+  '104.16.0.0/13',
+  '104.24.0.0/14',
+  '172.64.0.0/13',
+  '131.0.72.0/22',
+];
+
+/* ------------------------------------------------------------------ *
+ * 5c. 备用：cmliu CF-CIDR 运营商分段
+ *     注意：该文件混有非 Cloudflare 的互联段，生成的 IP 必须经过
+ *     CF_IPV4_RANGES 白名单校验后才可用。
  * ------------------------------------------------------------------ */
 export const BUILTIN_PREFERRED_SOURCES = [
   { name: 'CF 官方段', url: 'https://raw.githubusercontent.com/cmliu/cmliu/main/CF-CIDR.txt', isp: 'cf' },

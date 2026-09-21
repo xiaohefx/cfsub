@@ -88,13 +88,18 @@ export async function buildNodes(profile, cfg, host, opts = {}) {
   const ports = parsePorts(profile.ports || cfg.ports, [443]);
   const hosts = toArray(cfg.hosts).length ? toArray(cfg.hosts) : [host];
 
-  // 地址池：优选 IP + 优选域名
+  // 地址池：优选 IP + 优选域名（collectPreferredIps 内部已剔除非 Cloudflare 地址）
   let addrs = [];
   if (cfg.enablePreferredIp !== false || cfg.customPreferred || cfg.cleanIps) {
     addrs = await collectPreferredIps(cfg, Math.max(6, max));
   }
   const domains = cfg.enablePreferredDomain !== false ? await collectPreferredDomains(cfg, 4) : [];
   const pool = [...addrs, ...domains];
+
+  // 反代覆盖：写进节点 path，让服务端按节点使用指定反代（cfnew 的 p / wk 思路）
+  const nodeProxyIp = String(profile.proxyIp || cfg.customProxyIp || '').trim();
+  const nodeRegion =
+    cfg.proxyIpMode === 'region' && cfg.proxyIpRegion ? String(cfg.proxyIpRegion).toUpperCase() : '';
 
   const modes = [];
   if (profile.mode) modes.push(profile.mode);
@@ -139,7 +144,8 @@ export async function buildNodes(profile, cfg, host, opts = {}) {
           echDns: cfg.echDns,
           allowInsecure: !!cfg.allowInsecure,
           earlyData: cfg.enableEarlyData !== false,
-          proxyIp: profile.proxyIp || cfg.customProxyIp || '',
+          proxyIp: nodeProxyIp,
+          region: nodeRegion,
           name: renderName(tpl, {
             user: profile.name || 'CFSub',
             port: nodePort,
@@ -164,8 +170,33 @@ export function normalizePath(p) {
 
 /* --------------------------- URI 生成 --------------------------- */
 
+export function xhttpPath(uuid) {
+  return '/' + String(uuid).slice(0, 8);
+}
+
+/**
+ * 构造节点路径。
+ * - ?ed=2560        ：0-RTT 早期数据，服务端通过 sec-websocket-protocol 读取
+ * - ?proxyip=xxx    ：指定该节点使用的反代地址（服务端会解析）
+ * - ?wk=XX          ：指定该节点使用的反代地区（服务端按地区表解析）
+ * 与 cfnew / edgetunnel 保持一致。
+ */
+export function buildNodePath(node) {
+  const base = node.type === 'xhttp' ? xhttpPath(node.uuid) : normalizePath(node.path || '/');
+  const params = [];
+  if (node.earlyData) params.push('ed=2560');
+  // 不额外编码：queryOf 会对整个 path 做一次 encodeURIComponent，
+  // 这里再编码会导致 : 变成 %253A，依赖客户端解码次数，不可靠
+  if (node.proxyIp) params.push(`proxyip=${node.proxyIp}`);
+  else if (node.region) params.push(`wk=${node.region}`);
+  if (!params.length) return base;
+  return base + (base.includes('?') ? '&' : '?') + params.join('&');
+}
+
 function queryOf(node) {
   const q = [];
+  const pathValue = encodeURIComponent(buildNodePath(node));
+  const sni = node.sni || node.host;
   if (node.type === 'vless') {
     q.push('encryption=none');
     q.push(`security=${node.tls ? 'tls' : 'none'}`);
@@ -173,7 +204,8 @@ function queryOf(node) {
     q.push(`fp=${node.fp}`);
     q.push(`type=ws`);
     q.push(`host=${node.host}`);
-    q.push(`path=${encodeURIComponent(node.path)}`);
+    q.push(`sni=${sni}`);
+    q.push(`path=${pathValue}`);
     if (node.ech) q.push(`ech=${encodeURIComponent(node.ech)}`);
     if (node.allowInsecure) q.push('allowInsecure=1');
   } else if (node.type === 'trojan') {
@@ -182,7 +214,8 @@ function queryOf(node) {
     q.push(`fp=${node.fp}`);
     q.push(`type=ws`);
     q.push(`host=${node.host}`);
-    q.push(`path=${encodeURIComponent(node.path)}`);
+    q.push(`sni=${sni}`);
+    q.push(`path=${pathValue}`);
     if (node.ech) q.push(`ech=${encodeURIComponent(node.ech)}`);
     if (node.allowInsecure) q.push('allowInsecure=1');
   } else if (node.type === 'xhttp') {
@@ -191,15 +224,12 @@ function queryOf(node) {
     q.push(`type=xhttp`);
     q.push(`mode=stream-one`);
     q.push(`host=${node.host}`);
-    q.push(`path=${encodeURIComponent(xhttpPath(node.uuid))}`);
+    q.push(`sni=${sni}`);
+    q.push(`path=${pathValue}`);
     if (node.alpn) q.push(`alpn=${encodeURIComponent(node.alpn)}`);
     q.push(`fp=${node.fp}`);
   }
   return q.join('&');
-}
-
-export function xhttpPath(uuid) {
-  return '/' + String(uuid).slice(0, 8);
 }
 
 export function nodeToUri(node) {

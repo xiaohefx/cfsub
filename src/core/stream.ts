@@ -111,10 +111,50 @@ function makeWSStream(ws, earlyData) {
 
 /* ------------------------------ 主入口 ------------------------------ */
 
+/**
+ * 从 WebSocket 请求 URL 的查询参数读取单节点覆盖配置。
+ * 支持（与 cfnew / edgetunnel 一致）：
+ *   p   / proxyip  指定该节点的反代地址
+ *   wk             指定该节点的反代地区（HK / US / SG / JP ...）
+ *   s              指定该节点的出站代理
+ *   rm=no          关闭地区智能匹配
+ * 优先级：节点参数 > 面板/环境变量全局配置
+ */
+function applyConnOverrides(baseCfg, url) {
+  const p = url.searchParams.get('p') || url.searchParams.get('proxyip') || '';
+  const wk = (url.searchParams.get('wk') || '').toUpperCase();
+  const s = url.searchParams.get('s') || '';
+  const rm = url.searchParams.get('rm') || '';
+  if (!p && !wk && !s && !rm) return baseCfg;
+
+  const c = { ...baseCfg };
+  if (p) {
+    c.customProxyIp = p;
+    c.proxyIpMode = 'custom';
+  } else if (wk) {
+    c.proxyIpRegion = wk;
+    c.proxyIpMode = 'region';
+  }
+  if (rm) c.rm = String(rm).toLowerCase() !== 'no';
+  if (s) {
+    c.outboundProxy = s;
+    c.__outbound = parseOutboundProxy(s);
+  }
+  return c;
+}
+
 export async function handleWebSocket(request, env, ctx) {
-  const cfg = await loadConfig(env);
+  const baseCfg = await loadConfig(env);
   await loadUsage(env);
-  if (!cfg.__outbound) cfg.__outbound = parseOutboundProxy(cfg.outboundProxy);
+  if (!baseCfg.__outbound) baseCfg.__outbound = parseOutboundProxy(baseCfg.outboundProxy);
+
+  let url = null;
+  try {
+    url = new URL(request.url);
+  } catch {
+    url = null;
+  }
+  const cfg = url ? applyConnOverrides(baseCfg, url) : baseCfg;
 
   if (cfg.isPaused) return new Response('service paused', { status: 503 });
 

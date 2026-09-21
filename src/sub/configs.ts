@@ -1,6 +1,7 @@
-import { xhttpPath } from './build.ts';
+import { xhttpPath, buildNodePath } from './build.ts';
 
-const WS_PATH = (n) => n.path || '/';
+/** 节点路径统一由 buildNodePath 生成（含 ?ed= / ?proxyip= / ?wk=） */
+const WS_PATH = (n) => buildNodePath(n);
 
 /* ------------------------------ Clash YAML ------------------------------ */
 
@@ -39,7 +40,7 @@ function clashProxy(n) {
 
 function wsOpts(n) {
   const o = {
-    path: n.type === 'xhttp' ? xhttpPath(n.uuid) : WS_PATH(n),
+    path: WS_PATH(n),
     headers: { Host: n.host },
   };
   if (n.earlyData) {
@@ -145,7 +146,7 @@ function singboxOutbound(n, i) {
         type: 'xhttp',
         mode: 'stream-one',
         host: n.host,
-        path: xhttpPath(n.uuid),
+        path: WS_PATH(n),
         headers: { Host: n.host },
       },
     };
@@ -214,7 +215,7 @@ export function buildSingboxProfile(nodes) {
 
 function v2rayOutbound(n) {
   const ws = {
-    path: n.type === 'xhttp' ? xhttpPath(n.uuid) : WS_PATH(n),
+    path: WS_PATH(n),
     headers: { Host: n.host },
     ...(n.earlyData ? { maxEarlyData: 2560, earlyDataHeaderName: 'Sec-WebSocket-Protocol' } : {}),
   };
