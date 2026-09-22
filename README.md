@@ -466,7 +466,7 @@ PORTS = "443,2053,8443"
 | 变量名 | 说明 | 默认值 |
 | --- | --- | --- |
 | `ECH` | 加密 Client Hello | 关闭 |
-| `ENABLE_EARLY_DATA` | 0-RTT Early Data | 开启 |
+| `ENABLE_EARLY_DATA` | 0-RTT Early Data | 关闭 |
 | `ALLOW_INSECURE` | 允许不安全证书 | 关闭 |
 | `ENABLE_OFFICIAL_IP` | 内置官方直连池 | 开启 |
 | `ENABLE_PREFERRED_DOMAIN` | 内置优选域名 | 开启 |
@@ -647,6 +647,21 @@ wrangler.toml                Wrangler 部署配置
 **有些节点连不上**
 
 内置优选 IP 与域名是公开维护的资源，会随时间失效。可在「🧩 高级设置」关闭内置源、填入自己的地址，或点「⚡ 智能解析」重新解析一批。
+
+**节点全部 -1 / 全部连不上**
+
+按顺序排查：
+
+1. 确认已重新部署最新版本，并在客户端**重新拉取订阅**（不是刷新，是重新导入链接）
+2. 检查 0-RTT 是否开着 —— 进「⚙️ 基本设置」看「启用 0-RTT Early Data」应该是**关闭**的。
+   Cloudflare Workers 返回 101 时不回显 `Sec-WebSocket-Protocol`，开启后部分客户端握手失败
+3. 进「🧩 高级设置 → 反代」点「🔍 查看当前反代会用到哪些地址」，确认有输出
+4. 进「🌍 网络诊断」点「预览当前优选 IP」，看来源是否显示「在线实测接口 ✅」
+
+**为什么默认关闭 0-RTT**
+
+实测：客户端把首包塞进 `Sec-WebSocket-Protocol` 头时，Workers 的 101 响应不会回显该头，
+带早期数据握手失败、不带则正常。`cmliu/edgetunnel` 的默认值也是关闭。需要时可在「⚙️ 基本设置」手动开启。
 
 **支持 UDP 吗**
 

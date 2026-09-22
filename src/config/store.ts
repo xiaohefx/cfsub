@@ -1,4 +1,4 @@
-import { SYSTEM_DEFAULTS } from './defaults.ts';
+import { SYSTEM_DEFAULTS, SCHEMA_VERSION } from './defaults.ts';
 import { applyEnvOverrides, stripInternal } from './env.ts';
 import { today } from '../utils.ts';
 
@@ -49,9 +49,38 @@ export async function loadConfig(env) {
   if (!Array.isArray(cfg.panelApiKeys)) cfg.panelApiKeys = [];
   if (!Array.isArray(cfg.logs)) cfg.logs = [];
   cfg.__locked = applyEnvOverrides(cfg, env);
+
+  // 一次性结构迁移：只修正会影响连通性的字段，不覆盖用户自定义的其它值
+  if (migrateConfig(cfg)) {
+    if (kv) {
+      try {
+        await kv.put(CFG_KEY, JSON.stringify(stripInternal(cfg)));
+      } catch { /* 忽略，下次请求会重试 */ }
+    }
+  }
+
   cfgCache = cfg;
   cfgCacheAt = now;
   return cfg;
+}
+
+/**
+ * 配置迁移，返回 true 表示已修改、需要落盘。
+ * 被环境变量锁定的字段不参与迁移（环境变量优先级更高）。
+ */
+function migrateConfig(cfg) {
+  const locked = cfg.__locked || [];
+  const ver = Number(cfg.schemaVersion) || 1;
+  if (ver >= SCHEMA_VERSION) return false;
+
+  // v1 → v2：关闭 0-RTT。
+  // Cloudflare Workers 返回 101 时不会回显 Sec-WebSocket-Protocol，
+  // 客户端把首包塞进该头时会判定握手失败，导致节点全部不可用。
+  if (ver < 2 && !locked.includes('enableEarlyData')) {
+    cfg.enableEarlyData = false;
+  }
+  cfg.schemaVersion = SCHEMA_VERSION;
+  return true;
 }
 
 export async function saveConfig(env, cfg) {

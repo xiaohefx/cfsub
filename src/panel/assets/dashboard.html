@@ -279,6 +279,10 @@ summary{cursor:pointer;color:var(--mut);font-size:13px;padding:6px 0}
           <div><label class="f">ECH DoH</label><input id="cfg-echDns" data-cfg="echDns"></div>
         </div>
         <div class="chk"><input type="checkbox" id="chk-enableEarlyData"><span>启用 0-RTT Early Data（ed=2560）</span></div>
+        <div class="hint" style="color:var(--warn)">
+          ⚠️ 默认关闭。Cloudflare Workers 返回 101 时不会回显 Sec-WebSocket-Protocol，
+          开启后部分客户端会判定握手失败、节点全部连不上。除非你确认自己的客户端支持，否则不要开启。
+        </div>
         <div class="chk"><input type="checkbox" id="chk-allowInsecure"><span>允许不安全证书（allowInsecure）</span></div>
       </div>
 

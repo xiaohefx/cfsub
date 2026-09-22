@@ -156,43 +156,56 @@ export async function collectPreferredIps(cfg, limit = 12) {
     for (const ip of toArray(cfg.cleanIps)) push({ ip, port: 443, name: 'CleanIP' });
   }
 
-  // 3. 在线实测优选接口（cfnew 方案，返回真实可用的 Cloudflare IP）
+  // 3. 内置官方直连池：零外部依赖，必定是真实 Cloudflare 边缘 IP（cfnew v3.0 的默认策略）
+  const official = cfg.enableOfficialIp !== false ? shuffle(officialDirectIps()) : [];
+
+  // 4. 在线实测优选接口（cfnew 方案，返回按运营商分组的真实 Cloudflare IP）
+  let online = [];
   if (cfg.enablePreferredIp !== false) {
-    const online = await fetchOnlinePreferred(cfg);
-    for (const e of shuffle(online).slice(0, Math.max(4, limit))) push(e);
+    online = shuffle(await fetchOnlinePreferred(cfg));
   }
 
-  // 4. 远程 CIDR 源（结果需过 Cloudflare 白名单，非 Cloudflare 段直接丢弃）
-  if (out.length < limit && cfg.enableRemotePreferred !== false) {
+  // 5. 远程 CIDR 源（结果需过 Cloudflare 白名单，非 Cloudflare 段直接丢弃）
+  let cidrIps = [];
+  if (cfg.enableRemotePreferred !== false) {
     const urls = [...toArray(cfg.preferredUrls), ...BUILTIN_PREFERRED_SOURCES.map((s) => s.url)];
     const results = await Promise.allSettled(urls.slice(0, 4).map(fetchSource));
     results.forEach((r, i) => {
-      if (r.status !== 'fulfilled' || out.length >= limit) return;
+      if (r.status !== 'fulfilled') return;
       const src = BUILTIN_PREFERRED_SOURCES.find((s) => s.url === urls[i]);
       const label = src ? `${ISP_LABELS[src.isp] || ''}优选` : '优选';
       for (const line of shuffle(r.value).slice(0, Math.ceil(limit / 2))) {
-        if (out.length >= limit) break;
         if (line.includes('/')) {
           const ip = randomIpFromCidr(line);
-          if (ip) push({ ip, port: 443, name: label });
+          if (ip) cidrIps.push({ ip, port: 443, name: label });
         } else {
           const e = parseEntry(line);
-          if (e) push({ ...e, name: e.name || label });
+          if (e) cidrIps.push({ ...e, name: e.name || label });
         }
       }
     });
   }
 
-  // 5. 兜底：内置官方直连地址池（cfnew 官方直连，10 个真实 Cloudflare 边缘 IP）
-  if (!out.length) {
-    for (const ip of shuffle(OFFICIAL_DIRECT_IPS)) push({ ip, port: 443, name: '官方直连' });
-  }
   // 6. 最后兜底：从默认 CIDR 生成（仍要过白名单）
-  if (!out.length) {
+  if (!official.length && !online.length && !cidrIps.length) {
     for (let i = 0; i < Math.min(limit, 8); i++) {
       const ip = randomIpFromCidr(FALLBACK_CIDR[0]);
-      if (ip) push({ ip, port: 443, name: '官方优选' });
+      if (ip) cidrIps.push({ ip, port: 443, name: '官方优选' });
     }
+  }
+
+  // 7. 交叉合并：官方直连 / 在线实测 / CIDR 轮流取，保证多个来源都有覆盖
+  const groups = [official, online, cidrIps].filter((g) => g.length);
+  const merged = [];
+  for (let i = 0; merged.length < limit * 2; i++) {
+    let added = false;
+    for (const g of groups) {
+      if (i < g.length) {
+        push(g[i]);
+        added = true;
+      }
+    }
+    if (!added) break;
   }
 
   return out.slice(0, Math.max(1, limit));

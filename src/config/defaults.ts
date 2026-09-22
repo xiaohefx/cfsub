@@ -3,6 +3,14 @@ import { DEFAULT_DOH, DEFAULT_ECH_DOMAIN, DEFAULT_DNS_IP, TLS_PORTS } from './re
 export const CURRENT_VERSION = '1.0.0';
 
 /**
+ * 配置结构版本。
+ * 升级到 2 时做一次性迁移：关闭 0-RTT（Cloudflare Workers 不回显
+ * Sec-WebSocket-Protocol，会导致带早期数据的握手失败）。
+ * 已有部署的 KV 里存的是旧值，仅改默认值不会生效，必须迁移。
+ */
+export const SCHEMA_VERSION = 2;
+
+/**
  * 全局默认配置。
  * 优先级：KV 持久化配置  >  环境变量  >  这里的默认值
  */
@@ -28,7 +36,11 @@ export const SYSTEM_DEFAULTS = {
   echDns: DEFAULT_DOH,
   allowInsecure: false,
   enableTfo: false,
-  enableEarlyData: true, // 0-RTT (ed=2560)
+  // 0-RTT（ed=2560）默认关闭。
+  // 原因：Cloudflare Workers 返回 101 时不会回显 Sec-WebSocket-Protocol，
+  // 部分客户端会因此判定握手失败。实测带早期数据握手失败、不带则正常，
+  // 与 cmliu 的默认值（启用0RTT: false）保持一致。需要时可在高级设置开启。
+  enableEarlyData: false,
 
   /* ---------- 优选 / 反代 ---------- */
   enableOfficialIp: true, // 内置官方直连地址池
@@ -88,6 +100,9 @@ export const SYSTEM_DEFAULTS = {
   /* ---------- 其他 ---------- */
   panelApiKeys: [],
   logs: [],
+  // 注意：默认必须是 1，否则旧配置通过对象展开会直接继承新版本号，
+  // 导致迁移判断（ver >= SCHEMA_VERSION）永远成立、迁移不执行
+  schemaVersion: 1,
   createdAt: 0,
   updatedAt: 0,
 };
