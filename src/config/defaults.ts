@@ -8,7 +8,7 @@ export const CURRENT_VERSION = '1.0.0';
  * Sec-WebSocket-Protocol，会导致带早期数据的握手失败）。
  * 已有部署的 KV 里存的是旧值，仅改默认值不会生效，必须迁移。
  */
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 /**
  * 全局默认配置。
@@ -73,7 +73,7 @@ export const SYSTEM_DEFAULTS = {
   namePrefix: 'CFSub',
   subUserAgent: '',
   subConverter: 'https://url.v1.mk/sub',
-  maxConfigs: 12, // 每个用户最多生成多少节点
+  maxConfigs: 30, // 每个用户最多生成多少节点
 
   /* ---------- 用户 ---------- */
   users: [],

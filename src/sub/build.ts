@@ -70,8 +70,17 @@ export function getProfiles(cfg, subName = '') {
   }
 
   if (subName) {
-    const hit = list.find((p) => p.name === subName || p.id === subName || p.uuid === subName);
-    return hit ? [hit] : [];
+    const want = String(subName).trim();
+    // 主 profile 的别名：面板名称改过之后，「默认」这类旧链接仍然要能命中
+    const isMainAlias = ['默认', 'default', 'main', 'master'].includes(want.toLowerCase())
+      || want === '默认';
+    const hit = list.find((p) => p.name === want || p.id === want || p.uuid === want);
+    if (hit) return [hit];
+    if (isMainAlias) return [main];
+    // 没有任何具名用户时，任何 sub 都回落到主 profile，避免链接突然失效
+    const named = (cfg.users || []).filter((u) => u.uuid);
+    if (!named.length) return [main];
+    return [];
   }
   // 无 sub 参数时：若有多个用户则只返回默认（避免泄露他人节点）
   return [main];
@@ -84,7 +93,7 @@ export function getProfiles(cfg, subName = '') {
  * 每个节点：{ type, address, port, uuid, password, host, path, sni, fp, alpn, tls, name, proxyIp }
  */
 export async function buildNodes(profile, cfg, host, opts = {}) {
-  const max = profile.maxConfigs || cfg.maxConfigs || 12;
+  const max = profile.maxConfigs || cfg.maxConfigs || 30;
   const ports = parsePorts(profile.ports || cfg.ports, [443]);
   const hosts = toArray(cfg.hosts).length ? toArray(cfg.hosts) : [host];
 
@@ -94,7 +103,10 @@ export async function buildNodes(profile, cfg, host, opts = {}) {
     addrs = await collectPreferredIps(cfg, Math.max(6, max));
   }
   const domains = cfg.enablePreferredDomain !== false ? await collectPreferredDomains(cfg, 4) : [];
-  const pool = [...addrs, ...domains];
+  // 第一个地址固定用 Worker 自己的域名：这是最稳的一条（等价于普通订阅），
+  // 保证即使所有优选源都不可用，也至少有一个能直连成功的节点。
+  const selfHost = { ip: hosts[0], port: ports[0], name: '主域名' };
+  const pool = [selfHost, ...addrs, ...domains];
 
   // 反代覆盖：写进节点 path，让服务端按节点使用指定反代（cfnew 的 p / wk 思路）
   const nodeProxyIp = String(profile.proxyIp || cfg.customProxyIp || '').trim();

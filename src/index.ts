@@ -213,8 +213,11 @@ function isClientUA(ua) {
 function detectTarget(ua, flag) {
   if (flag) {
     if (['clash', 'yaml', 'meta', 'stash', 'clash-meta', 'y'].includes(flag)) return 'clash';
-    if (['sing', 'singbox', 'sing-box', 'sb', 's'].includes(flag)) return 'singbox';
-    if (['v2ray', 'vjson', 'v'].includes(flag)) return 'v2ray';
+    if (['sing', 'singbox', 'sing-box', 'sb'].includes(flag)) return 'singbox';
+    // v2ray / v：返回 v2rayN 可直接作为订阅导入的明文节点列表
+    // vjson：返回 v2rayN 的 JSON 配置文件
+    if (['v2ray', 'v'].includes(flag)) return 'raw';
+    if (['vjson', 'json'].includes(flag)) return 'v2ray';
     return 'raw';
   }
   if (/clash|meta|stash|verge|mihomo|cfw/i.test(ua)) return 'clash';

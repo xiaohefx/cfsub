@@ -79,6 +79,11 @@ function migrateConfig(cfg) {
   if (ver < 2 && !locked.includes('enableEarlyData')) {
     cfg.enableEarlyData = false;
   }
+  // v2 → v3：默认节点数 12 → 30。
+  // 只在值仍等于旧默认值（说明用户没手动改过）时才提升，避免覆盖自定义设置。
+  if (ver < 3 && !locked.includes('maxConfigs') && Number(cfg.maxConfigs) === 12) {
+    cfg.maxConfigs = 30;
+  }
   cfg.schemaVersion = SCHEMA_VERSION;
   return true;
 }

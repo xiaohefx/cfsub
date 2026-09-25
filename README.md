@@ -311,7 +311,8 @@ https://cfsub.pages.dev/sub/dash
 | `/sub?sub=用户名` | 指定用户的订阅 |
 | `/sub?sub=用户名&flag=clash` | Clash / Mihomo / Stash |
 | `/sub?sub=用户名&flag=singbox` | Sing-box |
-| `/sub?sub=用户名&flag=v2ray` | v2rayN JSON |
+| `/sub?sub=用户名&flag=v2ray` | v2rayN 明文节点列表（可直接当订阅导入） |
+| `/sub?sub=用户名&flag=vjson` | v2rayN JSON 配置文件 |
 | `/sub?sub=用户名&flag=base64` | Base64 明文 |
 | 其他路径 | 伪装主页 |
 
@@ -370,7 +371,7 @@ PORTS = "443,2053,8443"
 | `FP` | uTLS 指纹 | `chrome` |
 | `ALPN` | ALPN | 空（自动协商） |
 | `NAME_PREFIX` | 节点命名前缀 | `CFSub` |
-| `MAX_CONFIGS` | 每用户节点数 | `12` |
+| `MAX_CONFIGS` | 每用户节点数 | `30` |
 | `SUB_CONVERTER` | 订阅转换后端 | `https://url.v1.mk/sub` |
 
 `MODE` 可选值：
@@ -647,6 +648,11 @@ wrangler.toml                Wrangler 部署配置
 **有些节点连不上**
 
 内置优选 IP 与域名是公开维护的资源，会随时间失效。可在「🧩 高级设置」关闭内置源、填入自己的地址，或点「⚡ 智能解析」重新解析一批。
+
+**订阅返回 not found**
+
+`?sub=` 后面要跟**用户名**，不是随便填。主 profile 支持 `默认`、`default`、`main` 三个别名，
+改过面板名称也不会失效。用户名请在「👥 用户管理」或「🔗 节点信息」里复制面板生成的链接。
 
 **节点全部 -1 / 全部连不上**
 
