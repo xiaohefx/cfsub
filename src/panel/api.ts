@@ -2,6 +2,7 @@ import { loadConfig, saveConfig, loadUsage, getUsage, resetUsage, flushUsage, ad
 import { newUserDefaults, CURRENT_VERSION } from '../config/defaults.ts';
 import { smartCleanIps, collectPreferredIps, fetchOnlinePreferred, isCloudflareIpv4 } from '../core/preferred.ts';
 import { resolveProxyIps, normalizeProxy } from '../core/transport.ts';
+import { runSelfTest } from '../core/selftest.ts';
 import { validateNameStrategy } from '../sub/build.ts';
 import { json, randomUUID, isUUID, deriveUUID, gbToBytes, safeFetch, formatBytes } from '../utils.ts';
 import { SMART_CLEAN_DOMAINS } from '../config/resources.ts';
@@ -374,6 +375,12 @@ export async function handleTools(req, url, body, env) {
       colo,
       list: resolved,
     });
+  }
+
+  // 服务端自检：逐环节验证 Worker 自身能力
+  if (op === 'selftest') {
+    const result = await runSelfTest(env, cfg, String(body?.colo || ''), new URL(req.url).hostname);
+    return json({ success: true, result });
   }
 
   if (op === 'ping') {

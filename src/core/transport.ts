@@ -123,10 +123,14 @@ export function buildCandidates(address, port, cfg, colo = '') {
 
 /* ------------------------------ 建立连接 ------------------------------ */
 
-/** 建立一条到远端的 TCP socket（可能经过 SOCKS5 / HTTP CONNECT 隧道） */
+/**
+ * 建立一条到远端的 TCP socket（可能经过 SOCKS5 / HTTP CONNECT 隧道）。
+ * 注意：必须由调用方 await socket.opened，否则连接失败时不会抛错，
+ * 会导致「以为连上了」而不再尝试下一个候选地址。
+ */
 export async function openSocket(candidate, cfg) {
   const { host, port, via } = candidate;
-  if (!via) return await connect({ hostname: host, port });
+  if (!via) return await connect({ hostname: host, port, allowHalfOpen: true });
 
   const p = cfg.__outbound;
   if (!p) throw new Error('no outbound proxy configured');

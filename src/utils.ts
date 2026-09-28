@@ -198,6 +198,17 @@ export function today() {
   return new Date().toISOString().slice(0, 10);
 }
 
+/** 给 Promise 加超时，超时抛错 */
+export function withTimeout(promise, ms, message = 'timeout') {
+  let timer = null;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(message)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
+}
+
 /** 运行环境的 MD5 支持探测结果（isolate 内缓存） */
 let md5Ok = null;
 

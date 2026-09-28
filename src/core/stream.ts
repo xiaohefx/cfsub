@@ -1,10 +1,12 @@
 import { parseVlessHeader, parseTrojanHeader, sha224Hex, readEarlyData, VLESS_CMD_UDP, parseOutboundProxy } from './protocol.ts';
 import { buildCandidates, openSocket, closeSocket } from './transport.ts';
 import { loadConfig, loadUsage, addUsage, addConnect, getUsage, flushUsage } from '../config/store.ts';
-import { uuidToBytes, gbToBytes } from '../utils.ts';
+import { uuidToBytes, gbToBytes, withTimeout } from '../utils.ts';
 import { UDP_DNS_UPSTREAM } from '../config/resources.ts';
 
 const MAX_EARLY_DATA = 8192;
+/** 单个候选地址的建连超时；超时就换下一个候选 */
+const CONNECT_TIMEOUT = 5000;
 
 /** 构建 UUID / Trojan 口令 → 用户 的索引 */
 function buildUserIndex(cfg) {
@@ -164,7 +166,13 @@ export async function handleWebSocket(request, env, ctx) {
   const pair = new WebSocketPair();
   const client = pair[0];
   const server = pair[1];
-  server.accept();
+  // allowHalfOpen：客户端半关闭时不要立刻拆掉服务端，等下行数据发完
+  // （与 cmliu/edgetunnel 一致；部分运行时不支持该参数，回退到无参 accept）
+  try {
+    server.accept({ allowHalfOpen: true });
+  } catch {
+    server.accept();
+  }
   server.binaryType = 'arraybuffer';
 
   const early = readEarlyData(request);
@@ -180,7 +188,12 @@ export async function handleWebSocket(request, env, ctx) {
     }),
   );
 
-  return new Response(null, { status: 101, webSocket: client });
+  // Sec-WebSocket-Extensions: '' —— 禁用扩展协商，避免部分客户端握手失败（同 cmliu）
+  return new Response(null, {
+    status: 101,
+    webSocket: client,
+    headers: { 'Sec-WebSocket-Extensions': '' },
+  });
 }
 
 async function pump(reader, ws, cfg, state, index, env, colo) {
@@ -333,12 +346,16 @@ function parseFirstPacket(buf, index, state) {
 async function connectRemote(host, port, cfg, firstPayload, colo) {
   const candidates = buildCandidates(host, port, cfg, colo);
   for (const c of candidates) {
+    let socket = null;
     try {
-      const socket = await openSocket(c, cfg);
+      socket = await openSocket(c, cfg);
+      // 关键：必须等 opened，否则连接失败不会抛错，就再也不会尝试下一个候选地址
+      if (socket.opened) await withTimeout(socket.opened, CONNECT_TIMEOUT, `连接 ${c.label} 超时`);
       const writer = socket.writable.getWriter();
       if (firstPayload && firstPayload.byteLength) await writer.write(firstPayload);
       return { socket, writer, label: c.label };
     } catch {
+      if (socket) closeSocket(socket);
       continue;
     }
   }

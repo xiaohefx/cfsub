@@ -183,6 +183,14 @@ summary{cursor:pointer;color:var(--mut);font-size:13px;padding:6px 0}
         </div>
       </div>
       <div class="card">
+        <h3 class="sec" style="margin-top:0">🧪 服务端自检</h3>
+        <p class="hint">逐环节检查 Worker 自身能力：KV、出站 TCP、出站 HTTPS、在线优选接口、反代解析。
+          节点连不上时先点这里，能直接判断是「服务端问题」还是「你的网络到 Cloudflare 的问题」。</p>
+        <div class="row"><button class="btn" onclick="runSelfTest()">运行自检</button></div>
+        <div id="selfTestOut" style="margin-top:12px"></div>
+      </div>
+
+      <div class="card">
         <h3 class="sec" style="margin-top:0">⚡ 智能解析 Clean IP</h3>
         <p class="hint">把一批常用域名通过 DoH 解析成可用 IP，自动填入下方「Clean IP」。</p>
         <div class="row">
@@ -901,6 +909,22 @@ async function previewPreferred(){
     $('#cleanResult').innerHTML = '来源：'+src+' · 共 '+s.total+' 个（Cloudflare 校验通过 '+s.allCloudflare+' 个）<br>'
       + (j.list||[]).slice(0,20).map(x=>x.ip+':'+x.port+(x.name?(' ('+x.name+')'):'')).join('　');
   } else $('#cleanResult').textContent = '获取失败';
+}
+
+async function runSelfTest(){
+  const el = $('#selfTestOut');
+  el.innerHTML = '<div class="hint">自检中，约需 10~20 秒…</div>';
+  const j = await api('tools', {op:'selftest'});
+  if(!j.success){ el.innerHTML = '<div class="hint" style="color:var(--err)">自检调用失败</div>'; return; }
+  const r = j.result;
+  const rows = (r.checks||[]).map(c =>
+    '<div class="logline"><span style="min-width:22px">'+(c.ok?'✅':'❌')+'</span>'
+    + '<span style="flex:1">'+c.name+'</span>'
+    + '<span style="color:'+(c.ok?'var(--mut)':'var(--err)')+';flex:2">'+String(c.detail||'').slice(0,120)+'</span>'
+    + '<span style="color:var(--mut);min-width:60px;text-align:right">'+c.ms+'ms</span></div>').join('');
+  el.innerHTML = '<div class="hint" style="margin-bottom:8px">'+r.summary+'</div>' + rows
+    + '<details style="margin-top:10px"><summary>查看完整配置快照</summary><pre class="mono" style="white-space:pre-wrap;font-size:11px;color:var(--mut)">'
+    + JSON.stringify(r.config, null, 2).replace(/</g,'&lt;') + '</pre></details>';
 }
 
 async function previewProxyIp(){
