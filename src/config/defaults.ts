@@ -8,7 +8,7 @@ export const CURRENT_VERSION = '1.0.0';
  * Sec-WebSocket-Protocol，会导致带早期数据的握手失败）。
  * 已有部署的 KV 里存的是旧值，仅改默认值不会生效，必须迁移。
  */
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 /**
  * 全局默认配置。
@@ -26,7 +26,9 @@ export const SYSTEM_DEFAULTS = {
   trojanPassword: '', // Trojan 密码，留空用 sha224(uuid)
   mode: 'vless', // vless | trojan | xhttp | both | all
   protocols: { vless: true, trojan: false, xhttp: false },
-  ports: TLS_PORTS.join(','), // 节点端口，逗号分隔
+  // 节点端口。默认额外带上 80（明文），因为部分网络会对
+  // *.workers.dev 的 SNI 做阻断，此时只有非 TLS 节点还有机会连通。
+  ports: [...TLS_PORTS, 80].join(','),
   path: '/', // WS 路径
   hosts: '', // 多域名（逗号分隔），留空用当前访问域名
   fp: 'chrome', // uTLS 指纹

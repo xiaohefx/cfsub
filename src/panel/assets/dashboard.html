@@ -920,9 +920,44 @@ async function runSelfTest(){
   const rows = (r.checks||[]).map(c =>
     '<div class="logline"><span style="min-width:22px">'+(c.ok?'✅':'❌')+'</span>'
     + '<span style="flex:1">'+c.name+'</span>'
-    + '<span style="color:'+(c.ok?'var(--mut)':'var(--err)')+';flex:2">'+String(c.detail||'').slice(0,120)+'</span>'
+    + '<span style="color:'+(c.ok?'var(--mut)':'var(--err)')+';flex:2">'+String(c.detail||'').slice(0,160)+'</span>'
     + '<span style="color:var(--mut);min-width:60px;text-align:right">'+c.ms+'ms</span></div>').join('');
-  el.innerHTML = '<div class="hint" style="margin-bottom:8px">'+r.summary+'</div>' + rows
+
+  // 出站探测明细：区分「确实可用」与「被 Cloudflare 拒绝（预期）」
+  const probeRows = (r.outboundProbes||[]).map(p => {
+    const good = p.ok && !p.expectBlocked;
+    const icon = good ? '✅' : (p.expectBlocked ? '⚪' : '❌');
+    return '<div class="logline"><span style="min-width:22px">'+icon+'</span>'
+      + '<span style="flex:1">'+p.label+'</span>'
+      + '<span style="color:var(--mut);flex:2">'+p.note+'</span>'
+      + '<span style="color:var(--mut);min-width:60px;text-align:right">'+p.ms+'ms</span></div>';
+  }).join('');
+
+  const proxyRows = (r.proxyProbes||[]).map(p => {
+    const good = p.ok && !p.isCloudflare;
+    const icon = good ? '✅' : (p.isCloudflare ? '⚪' : '❌');
+    return '<div class="logline"><span style="min-width:22px">'+icon+'</span>'
+      + '<span style="flex:1">'+p.label+'</span>'
+      + '<span style="color:var(--mut);flex:2">'+(p.isCloudflare?'Cloudflare 地址，Worker 无法连接':p.note)+'</span>'
+      + '<span style="color:var(--mut);min-width:60px;text-align:right">'+p.ms+'ms</span></div>';
+  }).join('');
+
+  // 诊断建议：直接给出「为什么连不上」和「怎么修」
+  const diag = (r.diagnosis && r.diagnosis.items) || [];
+  const diagHtml = diag.map(d => {
+    const color = d.level==='warn' ? 'var(--warn)' : 'var(--acc)';
+    return '<div style="border-left:3px solid '+color+';padding:8px 12px;margin:10px 0;background:#0b1120;border-radius:8px">'
+      + '<div style="color:'+color+';font-weight:600;font-size:13px">'+(d.level==='warn'?'⚠️ ':'ℹ️ ')+d.title+'</div>'
+      + '<div class="hint" style="margin:6px 0">'+d.detail+'</div>'
+      + '<div style="font-size:12px;color:var(--ok)">👉 '+d.fix+'</div></div>';
+  }).join('');
+
+  el.innerHTML = '<div class="hint" style="margin-bottom:8px">'+r.summary+'</div>'
+    + diagHtml + rows
+    + (probeRows ? '<h3 class="sec">出站 TCP 探测明细</h3>'
+      + '<div class="hint" style="margin-bottom:6px">⚪ 表示该目标被 Cloudflare 拒绝，属预期行为（Worker 不能连 Cloudflare 自己的 IP）</div>' + probeRows : '')
+    + (proxyRows ? '<h3 class="sec">反代地址可用性</h3>'
+      + '<div class="hint" style="margin-bottom:6px">反代必须是 Cloudflare 之外的主机才有意义</div>' + proxyRows : '')
     + '<details style="margin-top:10px"><summary>查看完整配置快照</summary><pre class="mono" style="white-space:pre-wrap;font-size:11px;color:var(--mut)">'
     + JSON.stringify(r.config, null, 2).replace(/</g,'&lt;') + '</pre></details>';
 }

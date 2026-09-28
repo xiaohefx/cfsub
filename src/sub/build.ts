@@ -130,11 +130,13 @@ export async function buildNodes(profile, cfg, host, opts = {}) {
     const usablePorts = protocol === 'xhttp' ? ports.filter((p) => isTlsPort(p)) : ports;
     if (!usablePorts.length) continue;
     const usePool = pool.length ? pool : [{ ip: hosts[0], port: usablePorts[0], name: '默认' }];
-    // 地址 × 端口 交叉分配，保证生成的节点尽量不重复
+    // 端口轮转 + 地址轮转：保证每个端口（尤其是 80 明文端口）都能分到节点。
+    // 若按「地址填满再用下一个端口」，30 个地址会把 443 占满，80 端口一个节点都不会生成。
     for (let i = 0; i < max; i++) {
-      const entry = usePool[i % usePool.length];
+      const nodePort = usablePorts[i % usablePorts.length];
+      const entryIdx = Math.floor(i / usablePorts.length) % usePool.length;
+      const entry = usePool[entryIdx];
       const address = entry.ip;
-      const nodePort = (entry.port && entry.port !== 443 ? entry.port : null) || usablePorts[Math.floor(i / usePool.length) % usablePorts.length];
       const key = `${protocol}|${address}|${nodePort}`;
       if (seen.has(key)) continue;
       seen.add(key);
@@ -209,24 +211,25 @@ function queryOf(node) {
   const q = [];
   const pathValue = encodeURIComponent(buildNodePath(node));
   const sni = node.sni || node.host;
+  // 非 TLS 节点（80 端口）不写 sni / fp / alpn，与 cfnew 的非 TLS 分支一致
+  const tlsOnly = (arr) => (node.tls ? arr : []);
+
   if (node.type === 'vless') {
     q.push('encryption=none');
     q.push(`security=${node.tls ? 'tls' : 'none'}`);
-    if (node.alpn) q.push(`alpn=${encodeURIComponent(node.alpn)}`);
-    q.push(`fp=${node.fp}`);
+    q.push(...tlsOnly(node.alpn ? [`alpn=${encodeURIComponent(node.alpn)}`] : []));
+    q.push(...tlsOnly([`fp=${node.fp}`, `sni=${sni}`]));
     q.push(`type=ws`);
     q.push(`host=${node.host}`);
-    q.push(`sni=${sni}`);
     q.push(`path=${pathValue}`);
     if (node.ech) q.push(`ech=${encodeURIComponent(node.ech)}`);
     if (node.allowInsecure) q.push('allowInsecure=1');
   } else if (node.type === 'trojan') {
     q.push(`security=${node.tls ? 'tls' : 'none'}`);
-    if (node.alpn) q.push(`alpn=${encodeURIComponent(node.alpn)}`);
-    q.push(`fp=${node.fp}`);
+    q.push(...tlsOnly(node.alpn ? [`alpn=${encodeURIComponent(node.alpn)}`] : []));
+    q.push(...tlsOnly([`fp=${node.fp}`, `sni=${sni}`]));
     q.push(`type=ws`);
     q.push(`host=${node.host}`);
-    q.push(`sni=${sni}`);
     q.push(`path=${pathValue}`);
     if (node.ech) q.push(`ech=${encodeURIComponent(node.ech)}`);
     if (node.allowInsecure) q.push('allowInsecure=1');

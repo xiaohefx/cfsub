@@ -1,10 +1,8 @@
 import { connect } from 'cloudflare:sockets';
 import { parseHostPort, pick, shuffle, isIPv4, ipv4ToNat64, toArray } from '../utils.ts';
 import {
-  OFFICIAL_DIRECT_IPS,
   REGION_PROXYIPS,
   REGION_NEIGHBORS,
-  PREFERRED_DOMAINS,
   CMLIU_COLO_PROXY,
   CMLIU_FALLBACK_PROXY,
 } from '../config/resources.ts';
@@ -45,15 +43,15 @@ export function resolveProxyIps(cfg, colo = '') {
 
   if (cfg.proxyIpMode === 'custom') return out; // 已由 customProxyIp 覆盖
 
-  // auto：官方直连池 + colo 级反代 + 地区反代 + 优选域名 + 兜底
-  if (cfg.enableOfficialIp !== false) {
-    for (const ip of shuffle(OFFICIAL_DIRECT_IPS)) out.push(`${ip}:443`);
-  }
+  // auto：机房级反代 + 地区反代 + 兜底
+  //
+  // 注意：这里**不能**放 Cloudflare 的 IP 或优选反代域名。
+  // Cloudflare 明确禁止 Worker 的 connect() 连接它自己的 IP
+  // （报错 "cannot connect to the specified address. It looks like you might be
+  //   trying to connect to a HTTP-based service..."），
+  // 而优选域名（cf.090227.xyz 之类）解析出来也是 Cloudflare IP，同样连不上。
+  // 它们只适合作为「节点地址」给客户端用，不适合作为 Worker 的出站反代。
   if (colo) out.push(`${colo}.${CMLIU_COLO_PROXY}:443`);
-
-  if (cfg.enablePreferredDomain !== false) {
-    for (const d of shuffle(PREFERRED_DOMAINS)) out.push(`${d}:443`);
-  }
   for (const p of shuffle(REGION_PROXYIPS)) out.push(`${p.domain}:443`);
 
   if (cfg.backupProxyIp) out.push(cfg.backupProxyIp);

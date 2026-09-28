@@ -84,6 +84,18 @@ function migrateConfig(cfg) {
   if (ver < 3 && !locked.includes('maxConfigs') && Number(cfg.maxConfigs) === 12) {
     cfg.maxConfigs = 30;
   }
+  // v3 → v4：端口默认补上 80（明文）。
+  // 部分网络会阻断 *.workers.dev 的 SNI，此时只有非 TLS 节点还有机会连通。
+  if (ver < 4 && !locked.includes('ports')) {
+    const list = String(cfg.ports || '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (list.length && !list.includes('80')) {
+      list.push('80');
+      cfg.ports = list.join(',');
+    }
+  }
   cfg.schemaVersion = SCHEMA_VERSION;
   return true;
 }
