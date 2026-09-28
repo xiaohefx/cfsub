@@ -30,21 +30,29 @@ export const OFFICIAL_DIRECT_IPS = [
 /* ------------------------------------------------------------------ *
  * 2. 地区反代（ProxyIP）域名表 —— 来自 cmliu，cfnew 整理
  * ------------------------------------------------------------------ */
+/**
+ * 地区反代。域名格式必须是 `{机房三字码}.proxyip.cmliussss.net`（小写）。
+ *
+ * 历史坑：旧文档里的 `ProxyIP.HK.CMLiusss.net` 这种写法已经全部 ENOTFOUND 失效，
+ * 一定不要再用。
+ *
+ * 另一个现实：实测 35 个机房域名里，绝大多数现在都解析到 **Cloudflare 自己的 IP**，
+ * 而 Cloudflare 禁止 Worker 的 connect() 连接它的 IP，所以这些候选在反代场景下
+ * 多半连不上。它们仍保留在列表里作为尽力尝试，真正的兜底是
+ * CMLIU_FALLBACK_PROXY（proxyip.tp1.090227.xyz，实测指向非 Cloudflare 的 VPS）。
+ * 面板「🧪 服务端自检」会把每个候选的真实可用性逐个打出来。
+ */
 export const REGION_PROXYIPS = [
-  { domain: 'ProxyIP.HK.CMLiusss.net', region: 'HK', name: '香港' },
-  { domain: 'ProxyIP.US.CMLiusss.net', region: 'US', name: '美国' },
-  { domain: 'ProxyIP.SG.CMLiusss.net', region: 'SG', name: '新加坡' },
-  { domain: 'ProxyIP.JP.CMLiusss.net', region: 'JP', name: '日本' },
-  { domain: 'ProxyIP.KR.CMLiusss.net', region: 'KR', name: '韩国' },
-  { domain: 'ProxyIP.DE.CMLiusss.net', region: 'DE', name: '德国' },
-  { domain: 'ProxyIP.SE.CMLiusss.net', region: 'SE', name: '瑞典' },
-  { domain: 'ProxyIP.NL.CMLiusss.net', region: 'NL', name: '荷兰' },
-  { domain: 'ProxyIP.FI.CMLiusss.net', region: 'FI', name: '芬兰' },
-  { domain: 'ProxyIP.GB.CMLiusss.net', region: 'GB', name: '英国' },
-  { domain: 'ProxyIP.Oracle.cmliusss.net', region: 'Oracle', name: '甲骨文' },
-  { domain: 'ProxyIP.DigitalOcean.CMLiusss.net', region: 'DigitalOcean', name: 'DigitalOcean' },
-  { domain: 'ProxyIP.Vultr.CMLiusss.net', region: 'Vultr', name: 'Vultr' },
-  { domain: 'ProxyIP.Multacom.CMLiusss.net', region: 'Multacom', name: 'Multacom' },
+  { domain: 'hkg.proxyip.cmliussss.net', region: 'HK', name: '香港' },
+  { domain: 'nrt.proxyip.cmliussss.net', region: 'JP', name: '日本' },
+  { domain: 'sin.proxyip.cmliussss.net', region: 'SG', name: '新加坡' },
+  { domain: 'icn.proxyip.cmliussss.net', region: 'KR', name: '韩国' },
+  { domain: 'lax.proxyip.cmliussss.net', region: 'US', name: '美国' },
+  { domain: 'fra.proxyip.cmliussss.net', region: 'DE', name: '德国' },
+  { domain: 'arn.proxyip.cmliussss.net', region: 'SE', name: '瑞典' },
+  { domain: 'ams.proxyip.cmliussss.net', region: 'NL', name: '荷兰' },
+  { domain: 'hel.proxyip.cmliussss.net', region: 'FI', name: '芬兰' },
+  { domain: 'lhr.proxyip.cmliussss.net', region: 'GB', name: '英国' },
 ];
 
 /** 地区展示名与 emoji（面板下拉用） */
@@ -61,10 +69,6 @@ export const REGION_LABELS = {
   NL: ['🇳🇱 荷兰', 'NL', 'Netherlands'],
   FI: ['🇫🇮 芬兰', 'FI', 'Finland'],
   GB: ['🇬🇧 英国', 'GB', 'United Kingdom'],
-  Oracle: ['☁️ 甲骨文', 'Oracle', 'Oracle Cloud'],
-  DigitalOcean: ['🌊 DigitalOcean', 'DigitalOcean', 'DigitalOcean'],
-  Vultr: ['⚡ Vultr', 'Vultr', 'Vultr'],
-  Multacom: ['📡 Multacom', 'Multacom', 'Multacom'],
 };
 
 /** 邻近地区回退链：同地区 → 邻近地区 → 其他 */

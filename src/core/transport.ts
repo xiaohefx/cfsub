@@ -43,19 +43,22 @@ export function resolveProxyIps(cfg, colo = '') {
 
   if (cfg.proxyIpMode === 'custom') return out; // 已由 customProxyIp 覆盖
 
-  // auto：机房级反代 + 地区反代 + 兜底
+  // auto：兜底反代 → 机房级反代 → 地区反代
   //
-  // 注意：这里**不能**放 Cloudflare 的 IP 或优选反代域名。
+  // 注意 1：这里**不能**放 Cloudflare 的 IP 或优选反代域名。
   // Cloudflare 明确禁止 Worker 的 connect() 连接它自己的 IP
   // （报错 "cannot connect to the specified address. It looks like you might be
   //   trying to connect to a HTTP-based service..."），
   // 而优选域名（cf.090227.xyz 之类）解析出来也是 Cloudflare IP，同样连不上。
   // 它们只适合作为「节点地址」给客户端用，不适合作为 Worker 的出站反代。
-  if (colo) out.push(`${colo}.${CMLIU_COLO_PROXY}:443`);
-  for (const p of shuffle(REGION_PROXYIPS)) out.push(`${p.domain}:443`);
-
+  //
+  // 注意 2：兜底反代放在最前，因为实测它是指向非 Cloudflare 的 VPS，
+  // 是目前唯一大概率真能连上的；机房/地区反代域名多数已被 Cloudflare 接管。
   if (cfg.backupProxyIp) out.push(cfg.backupProxyIp);
   else out.push(CMLIU_FALLBACK_PROXY);
+
+  if (colo) out.push(`${colo}.${CMLIU_COLO_PROXY}:443`);
+  for (const p of shuffle(REGION_PROXYIPS)) out.push(`${p.domain}:443`);
 
   return out;
 }
