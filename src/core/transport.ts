@@ -131,11 +131,16 @@ export function buildCandidates(address, port, cfg, colo = '') {
  */
 export async function openSocket(candidate, cfg) {
   const { host, port, via } = candidate;
-  if (!via) return await connect({ hostname: host, port, allowHalfOpen: true });
+  // 注意：cloudflare:sockets 的 connect 签名是 connect({hostname,port}, {secureTransport, allowHalfOpen})。
+  // 选项必须放在**第二个参数**里，塞进第一个参数对象会导致 workerd 崩溃（runtime crash）。
+  if (!via) return await connect({ hostname: host, port });
 
   const p = cfg.__outbound;
   if (!p) throw new Error('no outbound proxy configured');
-  const sock = await connect({ hostname: p.host, port: p.port, secureTransport: p.kind === 'https' ? 'on' : 'off' });
+  const sock = await connect(
+    { hostname: p.host, port: p.port },
+    { secureTransport: p.kind === 'https' ? 'on' : 'off' },
+  );
   if (p.kind === 'socks5') await socks5Handshake(sock, host, port, p);
   else await httpConnectHandshake(sock, host, port, p);
   return sock;
