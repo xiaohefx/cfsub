@@ -103,10 +103,15 @@ export async function buildNodes(profile, cfg, host, opts = {}) {
     addrs = await collectPreferredIps(cfg, Math.max(6, max));
   }
   const domains = cfg.enablePreferredDomain !== false ? await collectPreferredDomains(cfg, 4) : [];
-  // 第一个地址固定用 Worker 自己的域名：这是最稳的一条（等价于普通订阅），
-  // 保证即使所有优选源都不可用，也至少有一个能直连成功的节点。
+  // 地址池顺序：优选 IP 在前，Worker 自身域名放最后。
+  //
+  // 为什么不把域名放第一个：优选 IP 节点不依赖客户端 DNS（地址就是 IP，
+  // 只有 SNI 用域名），而「地址 = 域名」的节点一旦客户端 DNS 被污染就会
+  // 全挂（实测国内网络把 *.workers.dev 解析到 168.143.171.93 这类假 IP）。
+  // 把 IP 节点排在前面，能保证列表开头永远是能用的，客户端默认测速选到的
+  // 也是它们。
   const selfHost = { ip: hosts[0], port: ports[0], name: '主域名' };
-  const pool = [selfHost, ...addrs, ...domains];
+  const pool = [...addrs, ...domains, selfHost];
 
   // 反代覆盖：写进节点 path，让服务端按节点使用指定反代（cfnew 的 p / wk 思路）
   const nodeProxyIp = String(profile.proxyIp || cfg.customProxyIp || '').trim();
